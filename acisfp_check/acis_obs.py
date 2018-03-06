@@ -95,7 +95,6 @@ class ObsidFindFilter():
         # internally maintained results data structures. We do not keep
         # every result at the moment (e.g. observations filtered on pitch)
         # But that may change in the future.
-        self.cmd_states = None
         self.obsid_interval_list = None
         self.non_CTI_obs = None
 
