@@ -1,4 +1,3 @@
-from __future__ import print_function
 ###############################################################################
 #
 #   ObsidFindFilter - Class that will extract CHANDRA ACIS OBSIDs using
@@ -17,9 +16,6 @@ from __future__ import print_function
 #
 ###############################################################################
 from Chandra.Time import DateTime
-import Ska.engarchive.fetch_sci as fetch
-from Ska.DBI import DBI
-
 #----------------------------------------------------------------
 #
 # who_in_fp.py
@@ -104,66 +100,6 @@ class ObsidFindFilter():
         self.non_CTI_obs = None
 
         self.list_of_sensitive_obs = []
-
-    # --------------------------------------------------------------------------
-    #
-    #  cmd_states_fetch
-    #
-    #   --------------------------------------------------------------------------
-    def cmd_states_fetch(self, tbegin, tend):
-        """
-        Search the TA database and retrieve all the command
-                         state data between the given start/stop times.
-
-        Returned - numpy array. Data types are:
-
-             Data item and type
-             ------------------
-             ('datestart', '|S21'),
-             ('datestop', '|S21'),
-             ('tstart', '<f8'),
-             ('tstop', '<f8'),
-             ('obsid', '<i8'),
-             ('power_cmd', '|S10'),
-             ('si_mode', '|S8'),
-             ('pcad_mode', '|S4'),
-             ('vid_board', '<i8'),
-             ('clocking', '<i8'),
-             ('fep_count', '<i8'),
-             ('ccd_count', '<i8'),
-             ('simpos', '<i8'),
-             ('simfa_pos', '<i8'),
-             ('pitch', '<f8'),
-             ('ra', '<f8'),
-             ('dec', '<f8'),
-             ('roll', '<f8'),
-             ('q1', '<f8'),
-             ('q2', '<f8'),
-             ('q3', '<f8'),
-             ('q4', '<f8'),
-             ('trans_keys', '|S48')
-             ('hetg', '|S4'),
-             ('letg', '|S4'),
-             ('dither', '|S4')
-
-        """
-        # convert begin and end into sybase query tstart and tstop
-        tstart = DateTime(tbegin)
-        tstop = DateTime(tend)
-        #
-        # form the query for everything, starting from tstart date to now
-        #
-        query = """select * from cmd_states where datestart >= '%s'
-                   and datestop <= '%s' order by datestart asc """ % (tstart.date, tstop.date)
-        #
-        # set up a read to the data base
-        #
-        aca_read_db = DBI(dbi='sybase', server='sybase', user='aca_read', database='aca') 
-
-        #  Fetch all the data
-        self.cmd_states = aca_read_db.fetchall(query)
- 
-        return self.cmd_states
 
     # ---------------------------------------------------------------------
     #
@@ -638,78 +574,6 @@ class ObsidFindFilter():
                eachobservation[self.is_fp_sensitive]:
                 fp_only.append(eachobservation)
         return fp_only
-
-
-    #----------------------------------------------------------------------
-    #
-    # general_g_i 
-    #
-    #---------------------------------------------------------------------
-    def general_g_i(self, start_time='2011:001', stop_time=None, 
-                    exptime=None, noCTI=False, pitchrange=None): 
-        """
-        Given: A Start and Stop time
-               Exposure time range (e.g. [10000, 50000])
-               CTI include flag (True/False)
-               Pitch range [low, high]
- 
-        Return:  Get all the obsid intervals between start_time
-                 and stop_time; apply the user specified 
-                 filters; then return the list
-        """
-        if stop_time is None:
-            stop_time = fetch.get_time_range("FPTEMP_11", format="date")[-1]
-        if exptime is None:
-            exptime = []
-        if pitchrange is None:
-            pitchrange = []
-
-        # Step 1 - Fetch all the command states for the time interval
-        print("\ngeneral_g_i Step 1 - get the Spacecraft commands between ", 
-              start_time, " and now: ",stop_time)
-        csf = self.cmd_states_fetch(start_time, stop_time)
-
-        # Step 2 - EXTRACT the OBSID Intervals (oi) from the fetched command states
-        # Second argument is used as a file name to write the data to a file if you want
-        print("\ngeneral_g_i Step 2 - Find the OBSID Intervals (oi)")
-        oi = self.find_obsid_intervals(csf, ' ')
-        print("The number of oi's found is: ", len(oi))
-
-        # Step 3 -  Filter out all observations outside the exposure time range, 
-        # if a range is given
-        print("\ngeneral_g_i Step 3 - Filter out all observations outside "
-              "the exposure time range of: ", exptime)
-        if len(exptime) > 0:
-            ei = self.exp_time_filter(oi, exptime)
-        else:
-            ei = oi
-            print("general_g_i Step 3 - No exposure time filtering")
-        print("Number of Observation Intervals found within the time filter: ", len(ei))
-
-        # Step 4 - Filter out all CTI observations if required
-        if noCTI == True:
-            print("\ngeneral_g_i Step 4 - Filter out all CTI observations")
-            no_cti = self.cti_filter(ei)
-        else:
-            print("\ngeneral_g_i Step 4 - *SKIPPED* Filter out all CTI "
-                  "observations - SKIPPED")
-            no_cti = ei
-        print("Number of observations after CTI's processing (or not) is: ", len(no_cti))
-
-        # Step 5 - Filter based upon pitch if a pitch range is given
-        if pitchrange != []:
-            print("\ngeneral_g_i Step 5 - Filtering on pitches in the range: ", pitchrange)
-            pitchlist = self.pitch_filter(no_cti, pitchrange)
-        else:
-            print("\ngeneral_g_i Step 5 - NO Filtering on pitches")
-            pitchlist = no_cti
-
-        print("\n\ngeneral_g_i -----Final number of obsid's filtered is: ", len(pitchlist))
-
-        # Return the list filtered on Pitch.
-        return pitchlist
-
-
 
     ######################################################################
     #
