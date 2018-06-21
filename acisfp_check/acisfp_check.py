@@ -2,7 +2,7 @@
 
 """
 ========================
-dpa_check
+acisfp_check
 ========================
 
 This code generates backstop load review outputs for checking the ACIS
