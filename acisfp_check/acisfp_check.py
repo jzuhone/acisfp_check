@@ -36,23 +36,18 @@ import os
 import sys
 from kadi import events
 
-#
-# Import ACIS-specific observation extraction, filtering 
+# Import ACIS-specific observation extraction, filtering
 # and attribute support routines.
-#
 from .acis_obs import ObsidFindFilter
 
 model_path = os.path.abspath(os.path.dirname(__file__))
 default_nopref_list = os.path.join(model_path, "FPS_NoPref.txt")
 
-#
-# INIT
-#
-VALIDATION_LIMITS = {'PITCH': [(1, 3.0), (99, 3.0)],
+validation_limits = {'PITCH': [(1, 3.0), (99, 3.0)],
                      'TSCPOS': [(1, 2.5), (99, 2.5)]
                      }
 
-HIST_LIMIT = [(-120.0, -112.0)]
+hist_limit = [(-120.0, -112.0)]
 
 def calc_model(model_spec, states, start, stop, T_acisfp=None,
                T_acisfp_times=None, dh_heater=None, dh_heater_times=None):
@@ -682,8 +677,8 @@ def main():
     opts = [("fps_nopref", {"default": default_nopref_list,
              "help": "Full path to the FP sensitive nopref file"})]
     args = get_options("acisfp", model_path, opts=opts)
-    acisfp_check = ACISFPCheck("fptemp", "acisfp", VALIDATION_LIMITS, 
-                               HIST_LIMIT, calc_model, args,
+    acisfp_check = ACISFPCheck("fptemp", "acisfp", validation_limits,
+                               hist_limit, calc_model, args,
                                other_telem=['1dahtbon'],
                                other_map={'1dahtbon': 'dh_heater',
                                           "fptemp_11": "fptemp"})
