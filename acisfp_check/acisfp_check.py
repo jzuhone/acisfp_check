@@ -21,7 +21,7 @@ import glob
 from Ska.Matplotlib import pointpair, \
     cxctime2plotdate
 import Ska.engarchive.fetch_sci as fetch
-from Chandra.Time import DateTime, secs2date
+from Chandra.Time import DateTime, secs2date, date2secs
 from collections import defaultdict
 import numpy as np
 import xija
@@ -38,26 +38,23 @@ from kadi import events
 import Ska.Numpy
 from astropy.table import Table
 
-#
-# Import ACIS-specific observation extraction, filtering 
+# Import ACIS-specific observation extraction, filtering
 # and attribute support routines.
-#
 from .acis_obs import ObsidFindFilter
 
 model_path = os.path.abspath(os.path.dirname(__file__))
 default_nopref_list = os.path.join(model_path, "FPS_NoPref.txt")
 
-#
-# INIT
-#
 VALIDATION_LIMITS = {'PITCH': [(1, 3.0), (99, 3.0)],
                      'TSCPOS': [(1, 2.5), (99, 2.5)]
                      }
 
 HIST_LIMIT = [(-120.0, -112.0)]
 
-def calc_model(model_spec, states, start, stop, T_acisfp=None,
-               T_acisfp_times=None, dh_heater=None, dh_heater_times=None):
+
+def calc_model(model_spec, states, start, stop, ephemeris,
+               ephemeris_times, T_acisfp=None, T_acisfp_times=None,
+               dh_heater=None, dh_heater_times=None):
     """
     Create and run the Thermal Model for the Focal Plane temperature.
 
@@ -75,7 +72,7 @@ def calc_model(model_spec, states, start, stop, T_acisfp=None,
     # --------------
     model = xija.ThermalModel('acisfp', start=start, stop=stop, model_spec=model_spec)
 
-    # create a numpy array of the start and stop times in the 
+    # create a numpy array of the start and stop times in the
     # commanded states array fetched by make_week_predict
     times = np.array([states['tstart'], states['tstop']])
 
@@ -106,20 +103,20 @@ def calc_model(model_spec, states, start, stop, T_acisfp=None,
     # model.comp Not in xija documentation
     model.comp['dh_heater'].set_data(dh_heater, dh_heater_times)
 
-    #  "orbitephem0_x","orbitephem0_y","orbitephem0_z" are not in Commanded
-    #  states  but they are in telemetry
-    # We have to manually insert the aoattqt<x> valued because some items 
+    # "orbitephem0_x","orbitephem0_y","orbitephem0_z" are not in Commanded
+    # states but they are in telemetry
+    # We have to manually insert the aoattqt<x> valued because some items
     # are sampled on 5 minute intervals and some are not.
     for i in range(1, 5):
         name = 'aoattqt{}'.format(i)
         state_name = 'q{}'.format(i)
         model.comp[name].set_data(states[state_name], times)
 
-    # Get ephemeris from eng archive
+    # Get ephemeris from eng archive, unless an ephemeris file was
+    # provided by the user
     for axis in "xyz":
         name = 'orbitephem0_{}'.format(axis)
-        msid = fetch.Msid(name, model.tstart - 2000, model.tstop + 2000)
-        model.comp[name].set_data(msid.vals, msid.times)
+        model.comp[name].set_data(ephemeris[name], ephemeris_times)
 
     # Set some initial values. Some of these are superfluous. You do this because some
     # of these values may not be set at the actual start time. The telemetry might not have
@@ -143,12 +140,13 @@ class ACISFPCheck(ACISThermalCheck):
         super(ACISFPCheck, self).__init__(msid, name, validation_limits,
                                           hist_limit, calc_model, args, 
                                           other_telem=other_telem, other_map=other_map)
+        self.ephemeris = args.ephemeris
         # Set specific limits for the focal plane model
         self.fp_sens_limit, self.acis_i_limit, self.acis_s_limit = get_acis_limits("fptemp")
         # Read in the FP Sensitive Nopref file and form nopref array from it.
         self.nopref_array = process_nopref_list(self.args.fps_nopref)
         # Create an empty observation list which will hold the results. This
-        # list contains all ACIS and all CTI observations and will have the 
+        # list contains all ACIS and all CTI observations and will have the
         # sensitivity boolean added.
         self.obs_with_sensitivity = []
         self.perigee_passages = []
@@ -502,7 +500,7 @@ class ACISFPCheck(ACISThermalCheck):
         mylog.info('\n\n ACIS-I -114 SCIENCE ONLY violations')
 
         # Create the violation data structure.
-        viols["ACIS_I"] = self.search_obsids_for_viols("ACIS-I", self.acis_i_limit, 
+        viols["ACIS_I"] = self.search_obsids_for_viols("ACIS-I", self.acis_i_limit,
                                                        ACIS_I_obs, temp, times, load_start)
 
         return viols
@@ -565,11 +563,53 @@ class ACISFPCheck(ACISThermalCheck):
         efov_table['earth_solid_angle'].format = '%.3e'
         efov_table.write(outfile, format='ascii', delimiter='\t')
 
-#----------------------------------------------------------------------
-#
-#   paint_perigee
-#
-#----------------------------------------------------------------------
+    def calc_model_wrapper(self, model_spec, states, tstart, tstop, state0=None):
+        """
+        This method sets up the model and runs it. "calc_model" is
+        provided by the specific model instances.
+
+        Parameters
+        ----------
+        model_spec : string
+            Path to the JSON file containing the model specification.
+        states : NumPy record array
+            Commanded states
+        tstart : float
+            The start time of the model run.
+        tstop : float
+            The end time of the model run. 
+        state0 : initial state dictionary, optional
+            This state is used to set the initial temperature.
+        """
+        if state0 is None:
+            start_msid = None
+            dh_heater = None
+            dh_heater_times = None
+        else:
+            start_msid = state0[self.msid]
+            htrbfn = os.path.join(self.bsdir, 'dahtbon_history.rdb')
+            mylog.info('Reading file of dahtrb commands from file %s' % htrbfn)
+            htrb = ascii.read(htrbfn, format='rdb')
+            dh_heater_times = date2secs(htrb['time'])
+            dh_heater = htrb['dahtbon'].astype(bool)
+        # Get ephemeris from eng archive, unless an ephemeris file was
+        # provided by the user
+        msids = ['orbitephem0_{}'.format(axis) for axis in "xyz"]
+        if self.ephemeris is None:
+            ephem_data = fetch.MSIDset(msids, tstart - 2000.0, tstop + 2000.0)
+            ephemeris = dict((k, ephem_data[k]) for k in msids)
+            ephemeris_times = ephemeris.times
+        else:
+            ephem_data = ascii.read(self.ephemeris, format='ascii')
+            idxs = np.logical_and(ephem_data["times"] >= tstart - 2000.0,
+                                  ephem_data["times"] <= tstop + 2000.0)
+            ephemeris = dict((k, ephem_data[k].data[idxs]) for k in msids)
+            ephemeris_times = ephemeris["times"].data[idxs]
+        return self.calc_model(model_spec, states, tstart, tstop, start_msid,
+                               ephemeris, ephemeris_times, dh_heater=dh_heater, 
+                               dh_heater_times=dh_heater_times)
+
+
 def paint_perigee(perigee_passages, states, plots, msid):
     """
     This function draws vertical dahsed lines for EEF, Perigee and XEF
@@ -686,19 +726,19 @@ def draw_obsids(extract_and_filter,
                                      linewidth=2.0)
 
             # Plot vertical end caps for each obsid to visually show start/stop
-            plots[msid]['ax'].vlines(obs_start, 
-                                     endcapstart, 
-                                     endcapstop, 
-                                     color=color, 
+            plots[msid]['ax'].vlines(obs_start,
+                                     endcapstart,
+                                     endcapstop,
+                                     color=color,
                                      linewidth=2.0)
-            plots[msid]['ax'].vlines(obs_stop, 
-                                     endcapstart, 
-                                     endcapstop, 
-                                     color=color, 
+            plots[msid]['ax'].vlines(obs_stop,
+                                     endcapstart,
+                                     endcapstop,
+                                     color=color,
                                      linewidth=2.0)
 
-            # Now print the obsid in the middle of the time span, 
-            # above the line, and rotate 90 degrees. 
+            # Now print the obsid in the middle of the time span,
+            # above the line, and rotate 90 degrees.
 
             obs_time = obs_start + (obs_stop - obs_start)/2
             if obs_time > plot_start:
@@ -752,12 +792,15 @@ def process_nopref_list(filespec=default_nopref_list):
     nopreflist.close()
 
     # Now return the nopref array
-    return nopref_array 
+    return nopref_array
+
 
 
 def main():
     opts = [("fps_nopref", {"default": default_nopref_list,
-             "help": "Full path to the FP sensitive nopref file"})]
+             "help": "Full path to the FP sensitive nopref file"}),
+            ("ephemeris", {"default": None,
+             "help": "Full path to an alternative ephemeris."})]
     args = get_options("acisfp", model_path, opts=opts)
     acisfp_check = ACISFPCheck("fptemp", "acisfp", VALIDATION_LIMITS, 
                                HIST_LIMIT, calc_model, args,
