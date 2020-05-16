@@ -15,10 +15,9 @@
 #                        of states from the Commanded States Data base
 #
 ###############################################################################
-from Chandra.Time import DateTime
 import cheta.fetch_sci as fetch
 from Ska.DBI import DBI
-
+from cxotime import CxoTime
 #----------------------------------------------------------------
 #
 # who_in_fp.py
@@ -148,8 +147,8 @@ class ObsidFindFilter():
 
         """
         # convert begin and end into sybase query tstart and tstop
-        tstart = DateTime(tbegin)
-        tstop = DateTime(tend)
+        tstart = CxoTime(tbegin)
+        tstop = CxoTime(tend)
         #
         # form the query for everything, starting from tstart date to now
         #
@@ -282,12 +281,12 @@ class ObsidFindFilter():
                firstpow is None:
                 firstpow = eachstate
                 DOYfetchstart = eachstate.datestart
-                secsfetchstart = DateTime(DOYfetchstart).secs
+                secsfetchstart = CxoTime(DOYfetchstart).secs
 
             # Process the first XTZ0000005 line you see
             if (eachstate.power_cmd == 'XTZ0000005' or eachstate.power_cmd == 'XCZ0000005') and \
                (xtztime is None and firstpow is not None):
-                xtztime = DateTime(eachstate.datestart).secs
+                xtztime = CxoTime(eachstate.datestart).secs
 
             # Process the first NPNT line you see
             if obsid is None and firstpow is not None:
@@ -316,9 +315,9 @@ class ObsidFindFilter():
 
             # Process the first AA00000000 line you see
             if eachstate.power_cmd == 'AA00000000' and aa0time is None and firstpow is not None:
-                aa0time = DateTime(eachstate.datestart).secs
+                aa0time = CxoTime(eachstate.datestart).secs
                 DOYfetchstop = eachstate.datestop
-                secsfetchstop = DateTime(DOYfetchstop).secs
+                secsfetchstop = CxoTime(DOYfetchstop).secs
 
                 # now calculate the exposure time
                 if xtztime is not None:

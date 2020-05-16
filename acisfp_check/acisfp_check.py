@@ -19,7 +19,7 @@ matplotlib.use('Agg')
 import glob
 from Ska.Matplotlib import pointpair, \
     cxctime2plotdate
-from Chandra.Time import DateTime, secs2date
+from cxotime import CxoTime
 from collections import defaultdict
 import numpy as np
 from acis_thermal_check import \
@@ -523,7 +523,7 @@ class ACISFPCheck(ACISThermalCheck):
         outfile = os.path.join(outdir, 'earth_solid_angles.dat')
         mylog.info('Writing Earth solid angles to %s' % outfile)
         e = self.predict_model.comp['earthheat__fptemp'].dvals
-        efov_table = Table([times, secs2date(times), e],
+        efov_table = Table([times, CxoTime(times).date, e],
                            names=['time', 'date', 'earth_solid_angle'],
                            copy=False)
         efov_table['time'].format = '%.2f'
@@ -557,9 +557,9 @@ def paint_perigee(perigee_passages, states, plots, msid):
         # The index [1] item is always the Perigee Passage time. Draw that line in red
         # If this line is between tstart and tstop then it needs to be drawn
         # on the plot. otherwise ignore
-        if states['tstop'][-1] >= DateTime(eachpassage[0]).secs >= states['tstart'][0]:
+        if states['tstop'][-1] >= CxoTime(eachpassage[0]).secs >= states['tstart'][0]:
             # Have to convert this time into the new x axis time scale necessitated by SKA
-            xpos = cxctime2plotdate([DateTime(eachpassage[0]).secs])
+            xpos = cxctime2plotdate([CxoTime(eachpassage[0]).secs])
 
             ymin, ymax = plots[msid]['ax'].get_ylim()
 
@@ -568,7 +568,7 @@ def paint_perigee(perigee_passages, states, plots, msid):
 
             # Plot the perigee passage time so long as it was specified in the CTI_report file
             if eachpassage[1] != "Not-within-load":
-                perigee_time = cxctime2plotdate([DateTime(eachpassage[1]).secs])
+                perigee_time = cxctime2plotdate([CxoTime(eachpassage[1]).secs])
                 plots[msid]['ax'].vlines(perigee_time, ymin, ymax, linestyle=':',
                                          color='black', linewidth=2.0)
 
