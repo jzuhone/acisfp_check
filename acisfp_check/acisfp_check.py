@@ -16,7 +16,6 @@ previous three weeks.
 import matplotlib
 matplotlib.use('Agg')
 
-import glob
 from Ska.Matplotlib import pointpair, \
     cxctime2plotdate
 from Chandra.Time import DateTime, secs2date
@@ -26,7 +25,7 @@ from acis_thermal_check import \
     get_options, \
     mylog, get_acis_limits
 from acis_thermal_check.utils import \
-    plot_two
+    plot_two, paint_perigee
 import os
 import sys
 from kadi import events
@@ -58,8 +57,7 @@ class ACISFPCheck(ACISThermalCheck):
         self.acis_s_limit,\
         self.acis_hot_limit = \
             get_acis_limits("fptemp")
-        self.obs_with_sensitivity = None
-        self.perigee_passages = None
+        self.obs_with_sensitivity = []
 
     def run(self, args, override_limits=None):
         """
@@ -81,8 +79,6 @@ class ACISFPCheck(ACISThermalCheck):
         # Create an empty observation list which will hold the results. This
         # list contains all ACIS and all ECS observations and will have the
         # sensitivity boolean added.
-        self.obs_with_sensitivity = []
-        self.perigee_passages = []
         super(ACISFPCheck, self).run(args, override_limits=override_limits)
 
     def _calc_model_supp(self, model, state_times, states, ephem, state0):
@@ -133,60 +129,6 @@ class ACISFPCheck(ACISThermalCheck):
         model.comp['dpa_power'].set_data(0.0)
         model.comp['1cbat'].set_data(-53.0)
         model.comp['sim_px'].set_data(-120.0)
-
-    def _gather_perigee(self, run_start, load_start):
-        # The first step is to build a list of all the perigee passages.
-
-        # Gather the perigee passages that occur from the
-        # beginning of the model run up to the start of the load
-        # from kadi
-        rzs = events.rad_zones.filter(run_start, load_start)
-        for rz in rzs:
-            self.perigee_passages.append([rz.start, rz.perigee])
-        for rz in rzs:
-            self.perigee_passages.append([rz.stop, rz.perigee])
-
-        # We will get the load passages from the relevant CRM pad time file
-        # (e.g. DO12143_CRM_Pad.txt) inside the bsdir directory
-        # Each line is either an inbound or outbound ECS
-        #
-        # The reason we are doing this is because we want to draw vertical
-        # lines denoting each perigee passage on the plots
-        #
-        # Open the file
-        crm_file_path = glob.glob(self.bsdir + "/*CRM*")[0]
-        crm_file = open(crm_file_path, 'r')
-
-        alines = crm_file.readlines()
-
-        idx = None
-        # Keep reading until you hit the last header line which is all "*"'s
-        for i, aline in enumerate(alines):
-            if len(aline) > 0 and aline[0] == "*":
-                idx = i+1
-                break
-
-        if idx is None:
-            raise RuntimeError("Couldn't find the end of the CRM Pad Time file header!")
-
-        # Found the last line of the header. Start processing Perigee Passages
-
-        # While there are still lines to be read
-        for aline in alines[idx:]:
-            # create an empty Peri. Passage instance location
-            passage = []
-
-            # split the CRM Pad Time file line read in and extract the
-            # relevant information
-            splitline = aline.split()
-            passage.append(splitline[6])  # Radzone entry/exit
-            passage.append(splitline[9])  # Perigee Passage time
-
-            # append this passage to the passages list
-            self.perigee_passages.append(passage)
-
-        # Done with the CRM Pad Time file - close it
-        crm_file.close()
 
     def _make_state_plots(self, plots, num_figs, w1, plot_start,
                           outdir, states, load_start, figsize=(12, 6)):
@@ -239,7 +181,7 @@ class ACISFPCheck(ACISThermalCheck):
         plots['roll_taco']['fig'].savefig(outfile)
         plots['roll_taco']['filename'] = filename
 
-    def make_prediction_plots(self, outdir, states, temps, tstart):
+    def make_prediction_plots(self, outdir, states, temps, load_start):
         """
         Make output plots.
 
@@ -257,7 +199,7 @@ class ACISFPCheck(ACISThermalCheck):
         times = self.predict_model.times
 
         # Gather perigee passages
-        self._gather_perigee(times[0], tstart)
+        self._gather_perigee(times[0], load_start+86400.0)
 
         # Next we need to find all the ACIS-S observations within the start/stop
         # times so that we can paint those on the plots as well. We will get
@@ -327,7 +269,7 @@ class ACISFPCheck(ACISThermalCheck):
         plots = {}
 
         # Start time of loads being reviewed expressed in units for plotdate()
-        load_start = cxctime2plotdate([tstart])[0]
+        load_start = cxctime2plotdate([load_start])[0]
         # Value for left side of plots
         plot_start = max(load_start-2.0, cxctime2plotdate([times[0]])[0])
 
@@ -529,48 +471,6 @@ class ACISFPCheck(ACISThermalCheck):
         efov_table['time'].format = '%.2f'
         efov_table['earth_solid_angle'].format = '%.3e'
         efov_table.write(outfile, format='ascii', delimiter='\t', overwrite=True)
-
-
-#----------------------------------------------------------------------
-#
-#   paint_perigee
-#
-#----------------------------------------------------------------------
-def paint_perigee(perigee_passages, states, plots, msid):
-    """
-    This function draws vertical dahsed lines for EEF, Perigee and XEF
-    events in the load.EEF and XEF lines are black; Perigee is red.
-
-    You supply the list of perigee passage events which are:
-        Radzone Start/Stop time
-        Perigee Passage time
-
-        The states you created in main
-
-        The dictionary of plots you created
-
-        The MSID (in this case FP_TEMP) used to access the dictionary
-    """
-    #
-    # Now plot any perigee passages that occur between xmin and xmax
-    for eachpassage in perigee_passages:
-        # The index [1] item is always the Perigee Passage time. Draw that line in red
-        # If this line is between tstart and tstop then it needs to be drawn
-        # on the plot. otherwise ignore
-        if states['tstop'][-1] >= DateTime(eachpassage[0]).secs >= states['tstart'][0]:
-            # Have to convert this time into the new x axis time scale necessitated by SKA
-            xpos = cxctime2plotdate([DateTime(eachpassage[0]).secs])
-
-            ymin, ymax = plots[msid]['ax'].get_ylim()
-
-            # now plot the line.
-            plots[msid]['ax'].vlines(xpos, ymin, ymax, linestyle=':', color='red', linewidth=2.0)
-
-            # Plot the perigee passage time so long as it was specified in the CTI_report file
-            if eachpassage[1] != "Not-within-load":
-                perigee_time = cxctime2plotdate([DateTime(eachpassage[1]).secs])
-                plots[msid]['ax'].vlines(perigee_time, ymin, ymax, linestyle=':',
-                                         color='black', linewidth=2.0)
 
 
 def draw_obsids(extract_and_filter, 
