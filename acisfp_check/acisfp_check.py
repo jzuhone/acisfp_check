@@ -106,7 +106,7 @@ class ACISFPCheck(ACISThermalCheck):
         model.comp['sim_px'].set_data(-120.0)
 
     def _make_state_plots(self, plots, num_figs, w1, plot_start,
-                          outdir, states, load_start, figsize=(12, 6)):
+                          states, load_start, figsize=(12, 6)):
         # Make a plot of ACIS CCDs and SIM-Z position
         plots['pow_sim'] = plot_two(
             fig_id=num_figs+1,
@@ -127,11 +127,7 @@ class ACISFPCheck(ACISThermalCheck):
         plots['pow_sim']['ax'].lines[1].set_label('FEPs')
         plots['pow_sim']['ax'].legend(fancybox=True, framealpha=0.5, loc=2)
         paint_perigee(self.perigee_passages, states, plots, "pow_sim")
-        filename = 'pow_sim.png'
-        outfile = os.path.join(outdir, filename)
-        mylog.info('Writing plot file %s' % outfile)
-        plots['pow_sim']['fig'].savefig(outfile)
-        plots['pow_sim']['filename'] = filename
+        plots['pow_sim']['filename'] = 'pow_sim.png'
 
         # Make a plot of off-nominal roll
         plots['roll_taco'] = plot_two(
@@ -150,25 +146,24 @@ class ACISFPCheck(ACISThermalCheck):
             figsize=figsize, width=w1, load_start=load_start)
         plots['roll_taco']['ax2'].set_yscale("log")
         paint_perigee(self.perigee_passages, states, plots, "roll_taco")
-        filename = 'roll_taco.png'
-        outfile = os.path.join(outdir, filename)
-        mylog.info('Writing plot file %s' % outfile)
-        plots['roll_taco']['fig'].savefig(outfile)
-        plots['roll_taco']['filename'] = filename
+        plots['roll_taco']['filename'] = 'roll_taco.png'
 
     def make_prediction_plots(self, outdir, states, temps, load_start):
         """
-        Make output plots.
+        Make plots of the thermal prediction as well as associated 
+        commanded states.
 
-        :param outdir: the directory to which the products are written
-        :param states: commanded states
-        :param times: time stamps (sec) for temperature arrays
-        :param temps: dict of temperatures
-        :param tstart: load start time
-        :rtype: dict of review information including plot file names
-
-        This function assumes that ACIS Ops LR has been run and that the directory
-        is populated with
+        Parameters
+        ----------
+        outdir : string
+            The path to the output directory.
+        states : NumPy record array
+            Commanded states
+        temps : dict of NumPy arrays
+            Dictionary of temperature arrays
+        load_start : float
+            The start time of the load in seconds from the beginning of the
+            mission.
         """
 
         times = self.predict_model.times
@@ -257,7 +252,7 @@ class ACISFPCheck(ACISThermalCheck):
         textypos = [-108.0, -119.3, -115.7]
         fontsize = [12, 9, 9]
         for i in range(3):
-            name = "%s_%d" % (self.name, i+1)
+            name = f"{self.name}_{i+1}"
             plots[name] = plot_two(fig_id=i+1, x=times, y=temps[self.name],
                                    x2=self.predict_model.times,
                                    y2=self.predict_model.comp["pitch"].mvals,
@@ -268,13 +263,17 @@ class ACISFPCheck(ACISThermalCheck):
                                    figsize=(12, 7.142857142857142),
                                    width=w1, load_start=load_start)
             # Draw a horizontal line indicating the FP Sensitive Observation Cut off
-            plots[name]['ax'].axhline(self.fp_sens_limit, linestyle='--', color='dodgerblue', linewidth=2.0)
+            plots[name]['ax'].axhline(self.cold_ecs_limit, linestyle='--', 
+                                      color='dodgerblue', linewidth=2.0)
             # Draw a horizontal line showing the ACIS-I -114 deg. C cutoff
-            plots[name]['ax'].axhline(self.acis_i_limit, linestyle='--', color='purple', linewidth=2.0)
+            plots[name]['ax'].axhline(self.acis_i_limit, linestyle='--', 
+                                      color='purple', linewidth=2.0)
             # Draw a horizontal line showing the ACIS-S -112 deg. C cutoff
-            plots[name]['ax'].axhline(self.acis_s_limit, linestyle='--', color='blue', linewidth=2.0)
+            plots[name]['ax'].axhline(self.acis_s_limit, linestyle='--', 
+                                      color='blue', linewidth=2.0)
             # Draw a horizontal line showing the ACIS-S -109 deg. C cutoff
-            plots[name]['ax'].axhline(self.acis_hot_limit, linestyle='--', color='red', linewidth=2.0)
+            plots[name]['ax'].axhline(self.acis_hot_limit, linestyle='--', 
+                                      color='red', linewidth=2.0)
             # Get the width of this plot to make the widths of all the
             # prediction plots the same
             if i == 0:
@@ -291,16 +290,27 @@ class ACISFPCheck(ACISThermalCheck):
                         ypos[i]+0.5*capwidth[i], textypos[i], 
                         fontsize[i], plot_start)
 
-            # Build the file name and output the plot to a file
+            # Build the file name
             filename = self.msid.lower() + 'M%dtoM%d.png' % (-ylim[i][0], -ylim[i][1])
-            outfile = os.path.join(outdir, filename)
-            mylog.info('Writing plot file %s' % outfile)
-            plots[name]['fig'].savefig(outfile)
             plots[name]['filename'] = filename
 
         self._make_state_plots(plots, 3, w1, plot_start,
-                               outdir, states, load_start, 
+                               states, load_start, 
                                figsize=(12, 6))
+
+        plots['default'] = plots[f"{self.name}_3"]
+
+        # This call allows the specific check tool
+        # to customize plots after the fact
+        self.custom_prediction_plots(plots)
+
+        # Now write all of the plots after possible
+        # customizations have been made
+        for key in plots:
+            if key != self.msid:
+                outfile = os.path.join(outdir, plots[key]['filename'])
+                mylog.info('Writing plot file %s' % outfile)
+                plots[key]['fig'].savefig(outfile)
 
         return plots
 
