@@ -51,35 +51,10 @@ class ACISFPCheck(ACISThermalCheck):
                                           other_telem=['1dahtbon'],
                                           other_map={'1dahtbon': 'dh_heater',
                                                      "fptemp_11": "fptemp"})
-        # Set specific limits for the focal plane model
-        self.fp_sens_limit, \
-        self.acis_i_limit, \
-        self.acis_s_limit,\
-        self.acis_hot_limit = \
-            get_acis_limits("fptemp")
-        self.obs_with_sensitivity = []
-
-    def run(self, args, override_limits=None):
-        """
-        The main interface to all of ACISThermalCheck's functions.
-        This method must be called by the particular thermal model
-        implementation to actually run the code and make the webpage.
-
-        Parameters
-        ----------
-        args : ArgumentParser arguments
-            The command-line options object, which has the options
-            attached to it as attributes
-        override_limits : dict, optional
-            Override any margin by setting a new value to its name
-            in this dictionary. SHOULD ONLY BE USED FOR TESTING.
-            This is deliberately hidden from command-line operation
-            to avoid it being used accidentally.
-        """
         # Create an empty observation list which will hold the results. This
         # list contains all ACIS and all ECS observations and will have the
         # sensitivity boolean added.
-        super(ACISFPCheck, self).run(args, override_limits=override_limits)
+        self.obs_with_sensitivity = []
 
     def _calc_model_supp(self, model, state_times, states, ephem, state0):
         """
