@@ -171,16 +171,18 @@ class ACISFPCheck(ACISThermalCheck):
         # Gather perigee passages
         self._gather_perigee(times[0], load_start+86400.0)
 
-        # Next we need to find all the ACIS-S observations within the start/stop
-        # times so that we can paint those on the plots as well. We will get
-        # those from the commanded states data structure called "states" 
-        # 
-        # Create an instance of the ObsidFindFilter class. This class provides
-        # methods to extract obsid intervals from the commanded states based 
-        # upon ACIS definitions and considerations. It also provides
-        # various methods to filter the interval set based upon pitch range, 
-        # number of ccd's, filter out ECS observations, and a range of exposure 
-        # times.
+        """
+        Next we need to find all the ACIS-S observations within the start/stop
+        times so that we can paint those on the plots as well. We will get
+        those from the commanded states data structure called "states" 
+
+        Create an instance of the ObsidFindFilter class. This class provides
+        methods to extract obsid intervals from the commanded states based 
+        upon ACIS definitions and considerations. It also provides
+        various methods to filter the interval set based upon pitch range, 
+        number of ccd's, filter out ECS observations, and a range of exposure 
+        times.
+        """
         extract_and_filter = ObsidFindFilter()
 
         # extract the OBSID's from the commanded states. NOTE: this contains all
