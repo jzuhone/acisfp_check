@@ -126,7 +126,6 @@ class ACISFPCheck(ACISThermalCheck):
         plots['pow_sim']['ax'].lines[0].set_label('CCDs')
         plots['pow_sim']['ax'].lines[1].set_label('FEPs')
         plots['pow_sim']['ax'].legend(fancybox=True, framealpha=0.5, loc=2)
-        paint_perigee(self.perigee_passages, states, plots, "pow_sim")
         plots['pow_sim']['filename'] = 'pow_sim.png'
 
         # Make a plot of off-nominal roll
@@ -145,7 +144,6 @@ class ACISFPCheck(ACISThermalCheck):
             ylim2=(1.0e-3, 1.0),
             figsize=figsize, width=w1, load_start=load_start)
         plots['roll_taco']['ax2'].set_yscale("log")
-        paint_perigee(self.perigee_passages, states, plots, "roll_taco")
         plots['roll_taco']['filename'] = 'roll_taco.png'
 
     def make_prediction_plots(self, outdir, states, temps, load_start):
@@ -258,32 +256,37 @@ class ACISFPCheck(ACISThermalCheck):
             plots[name] = plot_two(fig_id=i+1, x=times, y=temps[self.name],
                                    x2=self.predict_model.times,
                                    y2=self.predict_model.comp["pitch"].mvals,
-                                   title=f"{self.msid.upper()} (ACIS-I in red; ACIS-S in green; ECS in blue)",
                                    xlabel='Date', ylabel='Temperature (C)',
                                    ylabel2='Pitch (deg)', xmin=plot_start,
                                    ylim=ylim[i], ylim2=(40, 180), 
                                    figsize=(12, 7.142857142857142),
                                    width=w1, load_start=load_start)
+            plots[name]['ax'].set_title(self.msid.upper(), loc='left', pad=10)
             # Draw a horizontal line indicating the FP Sensitive Observation Cut off
-            plots[name]['ax'].axhline(self.cold_ecs_limit, linestyle='--', 
-                                      color='dodgerblue', linewidth=2.0)
+            plots[name]['ax'].axhline(self.cold_ecs_limit, linestyle='--',
+                                      color='dodgerblue', linewidth=2.0,
+                                      label='Cold ECS')
             # Draw a horizontal line showing the ACIS-I -114 deg. C cutoff
-            plots[name]['ax'].axhline(self.acis_i_limit, linestyle='--', 
-                                      color='purple', linewidth=2.0)
+            plots[name]['ax'].axhline(self.acis_i_limit, linestyle='--',
+                                      color='purple', linewidth=2.0,
+                                      label="ACIS-I")
             # Draw a horizontal line showing the ACIS-S -112 deg. C cutoff
-            plots[name]['ax'].axhline(self.acis_s_limit, linestyle='--', 
-                                      color='blue', linewidth=2.0)
+            plots[name]['ax'].axhline(self.acis_s_limit, linestyle='--',
+                                      color='blue', linewidth=2.0,
+                                      label='ACIS-S')
             # Draw a horizontal line showing the ACIS-S -109 deg. C cutoff
-            plots[name]['ax'].axhline(self.acis_hot_limit, linestyle='--', 
-                                      color='red', linewidth=2.0)
+            plots[name]['ax'].axhline(self.acis_hot_limit, linestyle='--',
+                                      color='red', linewidth=2.0,
+                                      label="Hot ACIS-S")
+            # Make the legend on the temperature plot
+            nlegend = len(plots[name]['ax'].lines) - 1
+            plots[name]['ax'].legend(bbox_to_anchor=(0.15, 0.99),
+                                     loc='lower left',
+                                     ncol=nlegend, fontsize=14)
             # Get the width of this plot to make the widths of all the
             # prediction plots the same
             if i == 0:
                 w1, _ = plots[name]['fig'].get_size_inches()
-
-            # Now plot any perigee passages that occur between xmin and xmax
-            # for eachpassage in perigee_passages:
-            paint_perigee(self.perigee_passages, states, plots, name)
 
             # Now draw horizontal lines on the plot running from start to stop
             # and label them with the Obsid
@@ -297,14 +300,14 @@ class ACISFPCheck(ACISThermalCheck):
             plots[name]['filename'] = filename
 
         self._make_state_plots(plots, 3, w1, plot_start,
-                               states, load_start, 
+                               states, load_start,
                                figsize=(12, 6))
 
-        plots['default'] = plots[f"{self.name}_3"]
+        # Now plot any perigee passages that occur between xmin and xmax
+        # for eachpassage in perigee_passages:
+        paint_perigee(self.perigee_passages, states, plots)
 
-        # This call allows the specific check tool
-        # to customize plots after the fact
-        self.custom_prediction_plots(plots)
+        plots['default'] = plots[f"{self.name}_3"]
 
         # Now write all of the plots after possible
         # customizations have been made
