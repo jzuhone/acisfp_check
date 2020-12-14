@@ -190,14 +190,15 @@ class ACISFPCheck(ACISThermalCheck):
         # Filter out any HRC science observations BUT keep ACIS ECS observations
         acis_and_ecs_obs = extract_and_filter.hrc_science_obs_filter(observation_intervals)
 
-        # Ok so now you have all the ACIS observations collected. Also,
-        # they have been identified by ObsidFindFilter as to who is in the focal plane.
-        # Some apps, like this one, care about FP_TEMP sensitivity. Some do not. 
-        # Since we do, then checking that and assigning a sensitivity must be done
-        # 
-        # Open the sensitive observation list file, which is found in the LR 
-        # directory,
-        # read each line, extract the OBSID and add that to a list.
+        """
+        Ok so now you have all the ACIS observations collected. Also,
+        they have been identified by ObsidFindFilter as to who is in the focal plane.
+        Some apps, like this one, care about FP_TEMP sensitivity. Some do not. 
+        Since we do, then checking that and assigning a sensitivity must be done
+
+        Open the sensitive observation list file, which is found in the LR 
+        directory, read each line, extract the OBSID and add that to a list.
+        """
         sensefile = open(os.path.join(self.bsdir, 'fp_sensitive.txt'), 'r')
 
         # The list_of_sensitive_obs is the list of all FP TEMP sensitive 
@@ -474,16 +475,9 @@ class ACISFPCheck(ACISThermalCheck):
         efov_table.write(outfile, format='ascii', delimiter='\t', overwrite=True)
 
 
-def draw_obsids(extract_and_filter, 
-                obs_with_sensitivity, 
-                plots,
-                msid, 
-                ypos, 
-                endcapstart, 
-                endcapstop, 
-                textypos, 
-                fontsize,
-                plot_start):
+def draw_obsids(extract_and_filter, obs_with_sensitivity,
+                plots, msid, ypos, endcapstart, endcapstop,
+                textypos, fontsize, plot_start):
     """
     This function draws visual indicators across the top of the plot showing
     which observations are ACIS; whether they are ACIS-I (red), ACIS-S (green),
