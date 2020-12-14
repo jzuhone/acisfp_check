@@ -281,13 +281,13 @@ class ObsidFindFilter():
             if (eachstate['power_cmd'] == 'WSPOW00000' or eachstate['power_cmd'] == 'WSVIDALLDN') and \
                firstpow is None:
                 firstpow = eachstate
-                DOYfetchstart = eachstate['datestart']
-                secsfetchstart = DateTime(DOYfetchstart).secs
 
             # Process the first XTZ0000005 line you see
             if (eachstate['power_cmd'] == 'XTZ0000005' or eachstate['power_cmd'] == 'XCZ0000005') and \
                (xtztime is None and firstpow is not None):
                 xtztime = DateTime(eachstate['datestart']).secs
+                DOYfetchstart = eachstate['datestart']
+                secsfetchstart = DateTime(DOYfetchstart).secs
 
             # Process the first NPNT line you see
             if obsid is None and firstpow is not None:
