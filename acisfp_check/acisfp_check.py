@@ -52,9 +52,8 @@ class ACISFPCheck(ACISThermalCheck):
                                           other_map={'1dahtbon': 'dh_heater',
                                                      "fptemp_11": "fptemp"})
         # Create an empty observation list which will hold the results. This
-        # list contains all ACIS and all ECS observations and will have the
-        # sensitivity boolean added.
-        self.obs_with_sensitivity = []
+        # list contains all ACIS and all ECS observations.
+        self.acis_and_ecs_obs = []
 
     def _calc_model_supp(self, model, state_times, states, ephem, state0):
         """
@@ -188,52 +187,7 @@ class ACISFPCheck(ACISThermalCheck):
         observation_intervals = extract_and_filter.find_obsid_intervals(states, None)
 
         # Filter out any HRC science observations BUT keep ACIS ECS observations
-        acis_and_ecs_obs = extract_and_filter.hrc_science_obs_filter(observation_intervals)
-
-        """
-        Ok so now you have all the ACIS observations collected. Also,
-        they have been identified by ObsidFindFilter as to who is in the focal plane.
-        Some apps, like this one, care about FP_TEMP sensitivity. Some do not. 
-        Since we do, then checking that and assigning a sensitivity must be done
-
-        Open the sensitive observation list file, which is found in the LR 
-        directory, read each line, extract the OBSID and add that to a list.
-        """
-        sensefile = open(os.path.join(self.bsdir, 'fp_sensitive.txt'), 'r')
-
-        # The list_of_sensitive_obs is the list of all FP TEMP sensitive 
-        # observations extracted from the file in the load review directory
-        list_of_sensitive_obs = []
-
-        # Get the list of FP_TEMP sensitive observations
-        for eachline in sensefile.readlines()[1:]:
-            # Extract the OBSID from each line; the obsid is in the second
-            # column of this line. Append it to the list of FP_TEMP sensitive
-            # observations
-            #
-            # NOTE: The obsid here is a STRING
-            list_of_sensitive_obs.append(eachline.split()[1])
-        # Done with the file - close it
-        sensefile.close()
-
-        # Now that you have the latest list of temperature sensitive OBSID's,
-        # run through each observation and append either "*FP SENS*" or
-        # "NOT FP SENS" to the end of each observation.
-
-        # Now run through the observation list attribute of the ObsidFindFilter class
-        for eachobservation in acis_and_ecs_obs:
-            # Pull the obsid from the observation and turn it into a string
-
-            obsid = str(extract_and_filter.get_obsid(eachobservation))
-            # See if it's in the sensitive list. If so, indicate whether or
-            # not this observation is FP Senstive in the new list. This will be
-            # used later in make_prediction_viols to catch violations.
-            if obsid in list_of_sensitive_obs:
-                eachobservation.append(True)
-            else:
-                eachobservation.append(False)
-
-            self.obs_with_sensitivity.append(eachobservation)
+        self.acis_and_ecs_obs = extract_and_filter.hrc_science_obs_filter(observation_intervals)
 
         # create an empty dictionary called plots to contain the returned
         # figures, axes 1  and axes 2 of the plot_two call
@@ -286,7 +240,7 @@ class ACISFPCheck(ACISThermalCheck):
 
             # Now draw horizontal lines on the plot running from start to stop
             # and label them with the Obsid
-            draw_obsids(extract_and_filter, self.obs_with_sensitivity, 
+            draw_obsids(extract_and_filter, self.acis_and_ecs_obs, 
                         plots, name, ypos[i], ypos[i]-0.5*capwidth[i], 
                         ypos[i]+0.5*capwidth[i], textypos[i], 
                         fontsize[i], plot_start)
@@ -338,9 +292,7 @@ class ACISFPCheck(ACISThermalCheck):
 
         MSID is a global
 
-        obs_with_sensitivity contains all ACIS and ECS observations
-        and they have had FP sensitivity boolean added. In other words it's
-        All ACIS and ECS runs.
+        acis_and_ecs_obs contains all ACIS and ECS observations.
 
         We will create a list of ECS-ONLY runs, and a list of all
         ACIS science runs without ECS runs. These two lists will
@@ -358,7 +310,7 @@ class ACISFPCheck(ACISThermalCheck):
         times = self.predict_model.times
 
         mylog.info('\nMAKE VIOLS Checking for limit violations in ' +
-                   str(len(self.obs_with_sensitivity)) +
+                   str(len(self.acis_and_ecs_obs)) +
                    " total science observations")
 
         viols = {}
@@ -371,17 +323,11 @@ class ACISFPCheck(ACISThermalCheck):
         # ------------------------------------------------------
         # Now divide out observations by ACIS-S and ACIS-I
         ACIS_S_obs = eandf.get_all_specific_instrument(
-            self.obs_with_sensitivity, "ACIS-S")
+            self.acis_and_ecs_obs, "ACIS-S")
         ACIS_I_obs = eandf.get_all_specific_instrument(
-            self.obs_with_sensitivity, "ACIS-I")
+            self.acis_and_ecs_obs, "ACIS-I")
 
-        # ACIS SCIENCE observations only  - no HRC; no ECS
-        #non_ecs_obs = eandf.ecs_filter(self.obs_with_sensitivity)
-
-        sci_ecs_obs = eandf.ecs_only_filter(self.obs_with_sensitivity)
-
-        # ACIS SCIENCE OBS which are sensitive to FP TEMP
-        #fp_sens_only_obs = eandf.fp_sens_filter(non_ecs_obs)
+        sci_ecs_obs = eandf.ecs_only_filter(self.acis_and_ecs_obs)
 
         temp = temps[self.name]
 
@@ -486,7 +432,7 @@ class ACISFPCheck(ACISThermalCheck):
         efov_table.write(outfile, format='ascii', delimiter='\t', overwrite=True)
 
 
-def draw_obsids(extract_and_filter, obs_with_sensitivity,
+def draw_obsids(extract_and_filter, obs_list,
                 plots, msid, ypos, endcapstart, endcapstop,
                 textypos, fontsize, plot_start):
     """
