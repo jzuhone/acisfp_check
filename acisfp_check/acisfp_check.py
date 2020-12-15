@@ -35,7 +35,7 @@ from astropy.table import Table
 # Import ACIS-specific observation extraction, filtering
 # and attribute support routines.
 #
-from .acis_obs import ObsidFindFilter
+from .acis_obs import ObsidList
 
 model_path = os.path.abspath(os.path.dirname(__file__))
 
@@ -173,18 +173,18 @@ class ACISFPCheck(ACISThermalCheck):
         times so that we can paint those on the plots as well. We will get
         those from the commanded states data structure called "states" 
 
-        Create an instance of the ObsidFindFilter class. This class provides
+        Create an instance of the ObsidList class. This class provides
         methods to extract obsid intervals from the commanded states based 
         upon ACIS definitions and considerations. It also provides
         various methods to filter the interval set based upon pitch range, 
         number of ccd's, filter out ECS observations, and a range of exposure 
         times.
         """
-        extract_and_filter = ObsidFindFilter()
+        extract_and_filter = ObsidList()
 
         # extract the OBSID's from the commanded states. NOTE: this contains all
         # observations including ECS runs and HRC observations
-        observation_intervals = extract_and_filter.find_obsid_intervals(states, None)
+        observation_intervals = extract_and_filter.find_obsid_intervals(states)
 
         # Filter out any HRC science observations BUT keep ACIS ECS observations
         self.acis_and_ecs_obs = extract_and_filter.hrc_science_obs_filter(observation_intervals)
@@ -213,7 +213,7 @@ class ACISFPCheck(ACISThermalCheck):
                                    y2=self.predict_model.comp["pitch"].mvals,
                                    xlabel='Date', ylabel='Temperature ($^\circ$C)',
                                    ylabel2='Pitch (deg)', xmin=plot_start,
-                                   ylim=ylim[i], ylim2=(40, 180), 
+                                   ylim=ylim[i], ylim2=(40, 180),
                                    figsize=(12, 7.142857142857142),
                                    width=w1, load_start=load_start)
             plots[name]['ax'].set_title(self.msid.upper(), loc='left', pad=10)
@@ -315,8 +315,8 @@ class ACISFPCheck(ACISThermalCheck):
 
         viols = {}
 
-        # create an instance of ObsidFindFilter()
-        eandf = ObsidFindFilter()
+        # create an instance of ObsidList()
+        eandf = ObsidList()
 
         # ------------------------------------------------------
         #   Create subsets of all the observations
@@ -380,8 +380,8 @@ class ACISFPCheck(ACISThermalCheck):
         where the temp gets warmer than the planning limit and identify which 
         observations (if any) include part or all of those intervals.
         """
-        # create an instance of ObsidFindFilter()
-        eandf = ObsidFindFilter()
+        # create an instance of ObsidList
+        eandf = ObsidList()
 
         viols_list = []
 
@@ -445,7 +445,7 @@ def draw_obsids(extract_and_filter, obs_list,
 
     The caller supplies:
                Options from the Command line supplied by the user at runtime
-               The instance of the ObsidFindFilter() class created 
+               The instance of the ObsidList class created 
                The plot dictionary
                The MSID used to index into the plot dictionary (superfluous but required)
                The position on the Y axis you'd like these indicators to appear
@@ -455,8 +455,8 @@ def draw_obsids(extract_and_filter, obs_list,
                The font size
                The left time of the plot in plot_date units
     """
-    # Now run through the observation list attribute of the ObsidFindFilter class
-    for eachobservation in obs_with_sensitivity:
+    # Now run through the observation list attribute of the ObsidList class
+    for eachobservation in obs_list:
         # extract the obsid
 
         obsid = extract_and_filter.get_obsid(eachobservation)
