@@ -4,3 +4,6 @@ dist
 acisfp_check.egg-info
 doc/_build
 *~
+acisfp_check/tests/answers/*/*[.png, .csv, .css]
+acisfp_check/tests/answers/*/index.*
+acisfp_check/tests/answers/*/run.dat
