@@ -107,10 +107,9 @@ def find_obsid_intervals(cmd_states):
     #
 
     # a little initialization
-    firstpow = None
-    obsid = None
+    firstpow = False
     xtztime = None
-    aa0time = None
+    simpos = None
 
     # EXTRACTING THE OBSERVATIONS
     #
@@ -127,27 +126,25 @@ def find_obsid_intervals(cmd_states):
         if 50000 > eachstate['obsid'] >= 38001:
             continue
 
+        pow_cmd = eachstate['power_cmd']
+
         # is this the first WSPOW of the interval?
-        if eachstate['power_cmd'] in ['WSPOW00000', 'WSVIDALLDN'] and \
-                firstpow is None:
-            firstpow = eachstate
-            DOYfetchstart = eachstate['datestart']
-            secsfetchstart = eachstate['tstart']
+        if pow_cmd in ['WSPOW00000', 'WSVIDALLDN'] and not firstpow:
+            firstpow = True
+            datestart = eachstate['datestart']
+            tstart = eachstate['tstart']
 
         # Process the first XTZ0000005 line you see
-        if eachstate['power_cmd'] in ['XTZ0000005', 'XCZ0000005'] and \
-                (xtztime is None and firstpow is not None):
+        if pow_cmd in ['XTZ0000005', 'XCZ0000005'] and \
+                (xtztime is None and firstpow):
             xtztime = eachstate['tstart']
-
-        # Process the first NPNT line you see
-        if obsid is None and firstpow is not None:
-            obsid = eachstate['obsid']
+            # MUST fix the instrument now
+            instrument = who_in_fp(eachstate['simpos'])
 
         # Process the first AA00000000 line you see
-        if eachstate['power_cmd'] == 'AA00000000' and aa0time is None and firstpow is not None:
-            aa0time = eachstate['tstop']
-            DOYfetchstop = eachstate['datestop']
-            secsfetchstop = eachstate['tstop']
+        if pow_cmd == 'AA00000000' and firstpow:
+            datestop = eachstate['datestop']
+            tstop = eachstate['tstop']
 
             # now calculate the exposure time
             if xtztime is not None:
@@ -157,19 +154,18 @@ def find_obsid_intervals(cmd_states):
                 # the Master List. We add the text version of who is in
                 # the focal plane
 
-                obsid_dict = {"datestart": DOYfetchstart,
-                              "datestop": DOYfetchstop,
-                              "tstart": secsfetchstart,
-                              "tstop": secsfetchstop,
-                              "obsid": obsid,
-                              "instrument": who_in_fp(eachstate['simpos'])}
+                obsid_dict = {"datestart": datestart,
+                              "datestop": datestop,
+                              "tstart": tstart,
+                              "tstop": tstop,
+                              "obsid": eachstate['obsid'],
+                              "instrument": instrument}
                 obsid_interval_list.append(obsid_dict)
 
             # now clear out the data values
-            firstpow = None
-            obsid = None
+            firstpow = False
             xtztime = None
-            aa0time = None
+            simpos = None
 
     # End of LOOP for eachstate in cmd_states:
 

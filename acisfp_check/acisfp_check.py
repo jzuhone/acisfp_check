@@ -336,7 +336,7 @@ class ACISFPCheck(ACISThermalCheck):
         # science run. These are load killers
         # ------------------------------------------------------------
         #
-        mylog.info(f'\n\n ACIS-S Science ({self.acis_s_limit} C) violations')
+        mylog.info(f'\n\nACIS-S Science ({self.acis_s_limit} C) violations')
 
         acis_s_viols = self.search_obsids_for_viols("ACIS-S",
             self.acis_s_limit, ACIS_S_obs, temp, times, load_start)
@@ -349,7 +349,7 @@ class ACISFPCheck(ACISThermalCheck):
         # science run. These are load killers
         # ------------------------------------------------------------
         #
-        mylog.info(f'\n\n ACIS-I Science ({self.acis_i_limit} C) violations')
+        mylog.info(f'\n\nACIS-I Science ({self.acis_i_limit} C) violations')
 
         # Create the violation data structure.
         acis_i_viols = self.search_obsids_for_viols("ACIS-I",
