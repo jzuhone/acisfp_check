@@ -1,20 +1,8 @@
-###############################################################################
-#
-#   ObsidList - Class that will extract CHANDRA ACIS OBSIDs using
-#               the commanded states database. Also provided are
-#               a series of filters the user can use to select
-#               Observations of a particular configuration.
-#
-#               Users must supply a start and stop time for extraction
-#               of states from the Commanded States Data base
-#
-###############################################################################
-
-#----------------------------------------------------------------
+# ----------------------------------------------------------------
 #
 # who_in_fp
 #
-#----------------------------------------------------------------
+# ----------------------------------------------------------------
 def who_in_fp(simpos=80655):
     """
     Returns a string telling you which instrument is in

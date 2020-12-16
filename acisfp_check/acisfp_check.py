@@ -18,7 +18,7 @@ matplotlib.use('Agg')
 
 from Ska.Matplotlib import pointpair, \
     cxctime2plotdate
-from Chandra.Time import DateTime, secs2date
+from cxotime import CxoTime
 from collections import defaultdict
 from acis_thermal_check import \
     ACISThermalCheck, \
@@ -410,7 +410,7 @@ class ACISFPCheck(ACISThermalCheck):
         outfile = os.path.join(outdir, 'earth_solid_angles.dat')
         mylog.info(f'Writing Earth solid angles to {outfile}')
         e = self.predict_model.comp['earthheat__fptemp'].dvals
-        efov_table = Table([times, secs2date(times), e],
+        efov_table = Table([times, CxoTime(times).date, e],
                            names=['time', 'date', 'earth_solid_angle'],
                            copy=False)
         efov_table['time'].format = '%.2f'
