@@ -9,8 +9,6 @@
 #               of states from the Commanded States Data base
 #
 ###############################################################################
-from Chandra.Time import DateTime
-import cheta.fetch_sci as fetch
 
 #----------------------------------------------------------------
 #
@@ -65,28 +63,7 @@ class ObsidList:
         self.tstart     = 2
         self.tstop      = 3
         self.obsid      = 4
-        self.power_cmd  = 5
-        self.si_mode    = 6
-        self.pcad_mode  = 7
-        self.vid_board  = 8
-        self.clocking   = 9
-        self.fep_count  = 10
-        self.ccd_count  = 11
-        self.simpos     = 12
-        self.simfa_pos  = 13
-        self.pitch      = 14
-        self.ra         = 15
-        self.dec        = 16
-        self.roll       = 17
-        self.q1         = 18
-        self.q2         = 19
-        self.q3         = 20
-        self.q4         = 21
-        self.trans_keys = 22
-        self.hetg       = 23
-        self.letg       = 24
-        self.dither     = 25
-        self.in_focal_plane = 26
+        self.in_focal_plane = 5
         # internally maintained results data structures. We do not keep
         # every result at the moment (e.g. observations filtered on pitch)
         # But that may change in the future.
@@ -102,38 +79,7 @@ class ObsidList:
         """
         User reads the SKA commanded states archive, via
         a call to the SKA get_cmd_states, between the
-        user specified START and STOP times. The following
-        items are returned as a numpy array:
-
-             Data item and type
-             ------------------
-             ('datestart', '|S21'),
-             ('datestop', '|S21'),
-             ('tstart', '<f8'),
-             ('tstop', '<f8'),
-             ('obsid', '<i8'),
-             ('power_cmd', '|S10'),
-             ('si_mode', '|S8'),
-             ('pcad_mode', '|S4'),
-             ('vid_board', '<i8'),
-             ('clocking', '<i8'),
-             ('fep_count', '<i8'),
-             ('ccd_count', '<i8'),
-             ('simpos', '<i8'),
-             ('simfa_pos', '<i8'),
-             ('pitch', '<f8'),
-             ('ra', '<f8'),
-             ('dec', '<f8'),
-             ('roll', '<f8'),
-             ('q1', '<f8'),
-             ('q2', '<f8'),
-             ('q3', '<f8'),
-             ('q4', '<f8'),
-             ('trans_keys', '|S48'),
-             ('hetg', '|S4'),
-             ('letg', '|S4'),
-             ('dither', '|S4'),
-
+        user specified START and STOP times. 
 
         An example of the read would be:
 
@@ -201,43 +147,22 @@ class ObsidList:
                firstpow is None:
                 firstpow = eachstate
                 DOYfetchstart = eachstate['datestart']
-                secsfetchstart = DateTime(DOYfetchstart).secs
+                secsfetchstart = eachstate['tstart']
 
             # Process the first XTZ0000005 line you see
             if eachstate['power_cmd'] in ['XTZ0000005', 'XCZ0000005'] and \
                (xtztime is None and firstpow is not None):
-                xtztime = DateTime(eachstate['datestart']).secs
+                xtztime = eachstate['tstart']
 
             # Process the first NPNT line you see
             if obsid is None and firstpow is not None:
                 obsid = eachstate['obsid']
-                power_cmd = eachstate['power_cmd']
-                si_mode = eachstate['si_mode']
-                pcad_mode = eachstate['pcad_mode']
-                vid_board = eachstate['vid_board']
-                clocking = eachstate['clocking']
-                fep_count = eachstate['fep_count']
-                ccd_cnt = eachstate['ccd_count']
-                simpos = eachstate['simpos']
-                simfa_pos = eachstate['simfa_pos']
-                pitch = eachstate['pitch']
-                ra = eachstate['ra']
-                dec = eachstate['dec']
-                roll = eachstate['roll']
-                q1 = eachstate['q1']
-                q2 = eachstate['q2']
-                q3 = eachstate['q3']
-                q4 = eachstate['q4']
-                trans_keys = eachstate['trans_keys']
-                hetg = eachstate['hetg']
-                letg = eachstate['letg']
-                dither = eachstate['dither']
 
             # Process the first AA00000000 line you see
             if eachstate['power_cmd'] == 'AA00000000' and aa0time is None and firstpow is not None:
-                aa0time = DateTime(eachstate['datestart']).secs
+                aa0time = eachstate['tstop']
                 DOYfetchstop = eachstate['datestop']
-                secsfetchstop = DateTime(DOYfetchstop).secs
+                secsfetchstop = eachstate['tstop']
 
                 # now calculate the exposure time
                 if xtztime is not None:
@@ -246,31 +171,13 @@ class ObsidList:
                     # OBSID interval. Now form the list element and append it to
                     # the Master List. We add on the exposure time and the text
                     # version of who is in the focal plane
-                    science_instrument = who_in_fp(simpos)
+                    science_instrument = who_in_fp(eachstate['simpos'])
 
                     self.obsid_interval_list.append([DOYfetchstart,
                                                      DOYfetchstop,
                                                      secsfetchstart,
                                                      secsfetchstop,
                                                      obsid,
-                                                     power_cmd,
-                                                     si_mode,
-                                                     pcad_mode,
-                                                     vid_board,
-                                                     clocking,
-                                                     fep_count,
-                                                     ccd_cnt,
-                                                     simpos,
-                                                     simfa_pos,
-                                                     pitch,
-                                                     ra,
-                                                     dec,
-                                                     roll,
-                                                     q1, q2, q3, q4,
-                                                     trans_keys,
-                                                     hetg,
-                                                     letg,
-                                                     dither,
                                                      science_instrument])
 
                 # now clear out the data values
