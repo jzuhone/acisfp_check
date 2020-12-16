@@ -35,7 +35,9 @@ from astropy.table import Table
 # Import ACIS-specific observation extraction, filtering
 # and attribute support routines.
 #
-from .acis_obs import ObsidList
+from .acis_obs import find_obsid_intervals, \
+    hrc_science_obs_filter, ecs_only_filter, \
+    get_all_specific_instrument
 
 model_path = os.path.abspath(os.path.dirname(__file__))
 
@@ -172,22 +174,14 @@ class ACISFPCheck(ACISThermalCheck):
         Next we need to find all the ACIS-S observations within the start/stop
         times so that we can paint those on the plots as well. We will get
         those from the commanded states data structure called "states" 
-
-        Create an instance of the ObsidList class. This class provides
-        methods to extract obsid intervals from the commanded states based 
-        upon ACIS definitions and considerations. It also provides
-        various methods to filter the interval set based upon pitch range, 
-        number of ccd's, filter out ECS observations, and a range of exposure 
-        times.
         """
-        extract_and_filter = ObsidList()
 
         # extract the OBSID's from the commanded states. NOTE: this contains all
         # observations including ECS runs and HRC observations
-        observation_intervals = extract_and_filter.find_obsid_intervals(states)
+        observation_intervals = find_obsid_intervals(states)
 
         # Filter out any HRC science observations BUT keep ACIS ECS observations
-        self.acis_and_ecs_obs = extract_and_filter.hrc_science_obs_filter(observation_intervals)
+        self.acis_and_ecs_obs = hrc_science_obs_filter(observation_intervals)
 
         # create an empty dictionary called plots to contain the returned
         # figures, axes 1  and axes 2 of the plot_two call
@@ -240,10 +234,9 @@ class ACISFPCheck(ACISThermalCheck):
 
             # Now draw horizontal lines on the plot running from start to stop
             # and label them with the Obsid
-            draw_obsids(extract_and_filter, self.acis_and_ecs_obs, 
-                        plots, name, ypos[i], ypos[i]-0.5*capwidth[i], 
-                        ypos[i]+0.5*capwidth[i], textypos[i], 
-                        fontsize[i], plot_start)
+            draw_obsids(self.acis_and_ecs_obs, plots, name, ypos[i], 
+                        ypos[i]-0.5*capwidth[i], ypos[i]+0.5*capwidth[i], 
+                        textypos[i], fontsize[i], plot_start)
 
             # These next lines are dummies so we can get the obsids in the legend
             plots[name]['ax'].errorbar([0.0, 0.0], [1.0, 1.0], xerr=1.0,
@@ -309,25 +302,20 @@ class ACISFPCheck(ACISThermalCheck):
         """
         times = self.predict_model.times
 
-        mylog.info('\nMAKE VIOLS Checking for limit violations in ' +
-                   str(len(self.acis_and_ecs_obs)) +
-                   " total science observations")
+        mylog.info(f"\nMAKE VIOLS Checking for limit violations in "
+                   f"{len(self.acis_and_ecs_obs)} total science observations")
 
         viols = {}
-
-        # create an instance of ObsidList()
-        eandf = ObsidList()
 
         # ------------------------------------------------------
         #   Create subsets of all the observations
         # ------------------------------------------------------
         # Now divide out observations by ACIS-S and ACIS-I
-        ACIS_S_obs = eandf.get_all_specific_instrument(
-            self.acis_and_ecs_obs, "ACIS-S")
-        ACIS_I_obs = eandf.get_all_specific_instrument(
-            self.acis_and_ecs_obs, "ACIS-I")
-
-        sci_ecs_obs = eandf.ecs_only_filter(self.acis_and_ecs_obs)
+        ACIS_S_obs = get_all_specific_instrument(self.acis_and_ecs_obs, 
+                                                 "ACIS-S")
+        ACIS_I_obs = get_all_specific_instrument(self.acis_and_ecs_obs,
+                                                 "ACIS-I")
+        sci_ecs_obs = ecs_only_filter(self.acis_and_ecs_obs)
 
         temp = temps[self.name]
 
@@ -380,16 +368,14 @@ class ACISFPCheck(ACISThermalCheck):
         where the temp gets warmer than the planning limit and identify which 
         observations (if any) include part or all of those intervals.
         """
-        # create an instance of ObsidList
-        eandf = ObsidList()
 
         viols_list = []
 
         # Run through all observations
         for eachobs in observations:
             # Get the observation tstart and tstop times, and obsid
-            obs_tstart = eandf.get_tstart(eachobs)
-            obs_tstop = eandf.get_tstop(eachobs)
+            obs_tstart = eachobs['tstart']
+            obs_tstop = eachobs['tstop']
             # If the observation is in this load, let's look at it
             if obs_tstart > load_start:
                 idxs = (times >= obs_tstart) & (times <= obs_tstop)
@@ -400,7 +386,7 @@ class ACISFPCheck(ACISThermalCheck):
                 # and add them to the list
                 if len(viols) > 0:
                     for viol in viols:
-                        viol["obsid"] = str(eandf.get_obsid(eachobs))
+                        viol["obsid"] = str(eachobs["obsid"])
                     viols_list += viols
 
         # Finished - return the violations list
@@ -422,7 +408,7 @@ class ACISFPCheck(ACISThermalCheck):
         """
         super(ACISFPCheck, self).write_temps(outdir, times, temps)
         outfile = os.path.join(outdir, 'earth_solid_angles.dat')
-        mylog.info('Writing Earth solid angles to %s' % outfile)
+        mylog.info(f'Writing Earth solid angles to {outfile}')
         e = self.predict_model.comp['earthheat__fptemp'].dvals
         efov_table = Table([times, secs2date(times), e],
                            names=['time', 'date', 'earth_solid_angle'],
@@ -432,8 +418,7 @@ class ACISFPCheck(ACISThermalCheck):
         efov_table.write(outfile, format='ascii', delimiter='\t', overwrite=True)
 
 
-def draw_obsids(extract_and_filter, obs_list,
-                plots, msid, ypos, endcapstart, endcapstop,
+def draw_obsids(obs_list, plots, msid, ypos, endcapstart, endcapstop,
                 textypos, fontsize, plot_start):
     """
     This function draws visual indicators across the top of the plot showing
@@ -445,7 +430,6 @@ def draw_obsids(extract_and_filter, obs_list,
 
     The caller supplies:
                Options from the Command line supplied by the user at runtime
-               The instance of the ObsidList class created 
                The plot dictionary
                The MSID used to index into the plot dictionary (superfluous but required)
                The position on the Y axis you'd like these indicators to appear
@@ -455,12 +439,12 @@ def draw_obsids(extract_and_filter, obs_list,
                The font size
                The left time of the plot in plot_date units
     """
-    # Now run through the observation list attribute of the ObsidList class
+    # Now run through the observation list
     for eachobservation in obs_list:
         # extract the obsid
 
-        obsid = extract_and_filter.get_obsid(eachobservation)
-        in_fp = eachobservation[extract_and_filter.in_focal_plane]
+        obsid = eachobservation['obsid']
+        in_fp = eachobservation['instrument']
 
         if obsid > 60000:
             # ECS observations during the science orbit are colored blue
@@ -480,8 +464,8 @@ def draw_obsids(extract_and_filter, obs_list,
             obsid_txt += " (ECS)"
 
         # Convert the start and stop times into the Ska-required format
-        obs_start = cxctime2plotdate([extract_and_filter.get_tstart(eachobservation)])
-        obs_stop = cxctime2plotdate([extract_and_filter.get_tstop(eachobservation)])
+        obs_start = cxctime2plotdate([eachobservation['tstart']])
+        obs_stop = cxctime2plotdate([eachobservation['tstop']])
 
         if in_fp.startswith("ACIS-") or obsid > 60000:
             # For each ACIS Obsid, draw a horizontal line to show
