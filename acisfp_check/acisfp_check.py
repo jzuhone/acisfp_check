@@ -311,25 +311,28 @@ class ACISFPCheck(ACISThermalCheck):
         #   Create subsets of all the observations
         # ------------------------------------------------------
         # Now divide out observations by ACIS-S and ACIS-I
-        ACIS_S_obs = get_all_specific_instrument(self.acis_and_ecs_obs, 
-                                                 "ACIS-S")
         ACIS_I_obs = get_all_specific_instrument(self.acis_and_ecs_obs,
                                                  "ACIS-I")
+        ACIS_S_obs = get_all_specific_instrument(self.acis_and_ecs_obs,
+                                                 "ACIS-S")
         sci_ecs_obs = ecs_only_filter(self.acis_and_ecs_obs)
 
         temp = temps[self.name]
 
         # ------------------------------------------------------------
-        # Science Orbit ECS -119.5 violations; -119.5 violation check
+        # ACIS-I - Collect any -112 C violations of any non-ECS ACIS-I
+        # science run. These are load killers
         # ------------------------------------------------------------
-        mylog.info(f'\n\nScience Orbit ECS ({self.cold_ecs_limit} C) violations')
+        #
+        mylog.info(f'\n\nACIS-I Science ({self.acis_i_limit} C) violations')
 
-        ecs_viols = self.search_obsids_for_viols("Science Orbit ECS",
-            self.cold_ecs_limit, sci_ecs_obs, temp, times, load_start)
+        # Create the violation data structure.
+        acis_i_viols = self.search_obsids_for_viols("ACIS-I",
+                                                    self.acis_i_limit, ACIS_I_obs, temp, times, load_start)
 
-        viols["ecs"] = {"name": f"Science Orbit ECS ({self.cold_ecs_limit} C)",
-                        "type": "Min",
-                        "values": ecs_viols}
+        viols["ACIS_I"] = {"name": f"ACIS-I ({self.acis_i_limit} C)",
+                           "type": "Max",
+                           "values": acis_i_viols}
 
         # ------------------------------------------------------------
         # ACIS-S - Collect any -111 C violations of any non-ECS ACIS-S
@@ -345,19 +348,16 @@ class ACISFPCheck(ACISThermalCheck):
                            "values": acis_s_viols}
 
         # ------------------------------------------------------------
-        # ACIS-I - Collect any -112 C violations of any non-ECS ACIS-I
-        # science run. These are load killers
+        # Science Orbit ECS -119.5 violations; -119.5 violation check
         # ------------------------------------------------------------
-        #
-        mylog.info(f'\n\nACIS-I Science ({self.acis_i_limit} C) violations')
+        mylog.info(f'\n\nScience Orbit ECS ({self.cold_ecs_limit} C) violations')
 
-        # Create the violation data structure.
-        acis_i_viols = self.search_obsids_for_viols("ACIS-I",
-            self.acis_i_limit, ACIS_I_obs, temp, times, load_start)
+        ecs_viols = self.search_obsids_for_viols("Science Orbit ECS",
+                                                 self.cold_ecs_limit, sci_ecs_obs, temp, times, load_start)
 
-        viols["ACIS_I"] = {"name": f"ACIS-I ({self.acis_i_limit} C)",
-                           "type": "Max",
-                           "values": acis_i_viols}
+        viols["ecs"] = {"name": f"Science Orbit ECS ({self.cold_ecs_limit} C)",
+                        "type": "Min",
+                        "values": ecs_viols}
 
         return viols
 
