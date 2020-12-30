@@ -373,8 +373,8 @@ class ACISFPCheck(ACISThermalCheck):
 
         # Run through all observations
         for eachobs in observations:
-            # Get the observation tstart and tstop times, and obsid
-            obs_tstart = eachobs['tstart']
+            # Get the observation start science and stop science times, and obsid
+            obs_tstart = eachobs['start_science']
             obs_tstop = eachobs['tstop']
             # If the observation is in this load, let's look at it
             if obs_tstart > load_start:

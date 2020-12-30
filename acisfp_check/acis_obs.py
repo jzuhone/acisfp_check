@@ -97,7 +97,6 @@ def find_obsid_intervals(cmd_states):
     # a little initialization
     firstpow = False
     xtztime = None
-    simpos = None
 
     # EXTRACTING THE OBSERVATIONS
     #
@@ -146,6 +145,7 @@ def find_obsid_intervals(cmd_states):
                               "datestop": datestop,
                               "tstart": tstart,
                               "tstop": tstop,
+                              "start_science": xtztime,
                               "obsid": eachstate['obsid'],
                               "instrument": instrument}
                 obsid_interval_list.append(obsid_dict)
@@ -153,7 +153,6 @@ def find_obsid_intervals(cmd_states):
             # now clear out the data values
             firstpow = False
             xtztime = None
-            simpos = None
 
     # End of LOOP for eachstate in cmd_states:
 
