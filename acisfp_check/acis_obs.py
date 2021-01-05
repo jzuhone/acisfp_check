@@ -49,15 +49,8 @@ def who_in_fp(simpos=80655):
 def find_obsid_intervals(cmd_states):
     """
     User reads the SKA commanded states archive, via
-    a call to the SKA get_cmd_states, between the
-    user specified START and STOP times. 
-
-    An example of the read would be:
-
-        start_time = '2005:001'
-        stop_time = '2005:031'  # i.e. January
-
-        cmd_states = cmd_statesFetch(start_time, stop_time)
+    a call to the SKA kadi.commands.states.get_states, 
+    between the user specified START and STOP times.
 
     Problem is, ALL commanded states that were stored
     in the archive will be returned. So then you call:
@@ -67,19 +60,17 @@ def find_obsid_intervals(cmd_states):
     And this will find the obsid intervals.
     What this program does is to extract the time interval for
     each OBSID. Said interval start is defined by a
-    WSPOW00000/WSVIDALLDN, and the interval end is
-    defined by the first AA000000 that follows.
+    startScience comment, and the interval end is
+    defined by the first stopScience command that follows.
 
     When the interval has been found,
-    a list element is created from the value of
+    a dict element is created from the value of
     states data at the time point of the first NPNT
     line seen - *minus* the trans_keys, tstart and tstop
     times. The values of datestart and datestop are
-    the WSPOW00000/WSVIDALLDN and AA000000 times. The
-    exposure time of the interval is also tacked on to
-    the end of the list. This list
+    the XTZ00000 and AA000000 times. This dict
     is appended to a Master list of all obsid intervals
-    and this list is returned. Users
+    and this list is returned.
 
     Notes: The obsid filtering method includes the
            configuration from the last OBSID, through
