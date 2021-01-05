@@ -16,17 +16,16 @@ previous three weeks.
 import matplotlib
 matplotlib.use('Agg')
 
-import glob
 from Ska.Matplotlib import pointpair, \
     cxctime2plotdate
-from Chandra.Time import DateTime, secs2date
+from cxotime import CxoTime
 from collections import defaultdict
 from acis_thermal_check import \
     ACISThermalCheck, \
     get_options, \
     mylog, get_acis_limits
 from acis_thermal_check.utils import \
-    plot_two
+    plot_two, paint_perigee
 import os
 import sys
 from kadi import events
@@ -36,7 +35,9 @@ from astropy.table import Table
 # Import ACIS-specific observation extraction, filtering
 # and attribute support routines.
 #
-from .acis_obs import ObsidFindFilter
+from .acis_obs import find_obsid_intervals, \
+    hrc_science_obs_filter, ecs_only_filter, \
+    get_all_specific_instrument
 
 model_path = os.path.abspath(os.path.dirname(__file__))
 
@@ -52,38 +53,9 @@ class ACISFPCheck(ACISThermalCheck):
                                           other_telem=['1dahtbon'],
                                           other_map={'1dahtbon': 'dh_heater',
                                                      "fptemp_11": "fptemp"})
-        # Set specific limits for the focal plane model
-        self.fp_sens_limit, \
-        self.acis_i_limit, \
-        self.acis_s_limit,\
-        self.acis_hot_limit = \
-            get_acis_limits("fptemp")
-        self.obs_with_sensitivity = None
-        self.perigee_passages = None
-
-    def run(self, args, override_limits=None):
-        """
-        The main interface to all of ACISThermalCheck's functions.
-        This method must be called by the particular thermal model
-        implementation to actually run the code and make the webpage.
-
-        Parameters
-        ----------
-        args : ArgumentParser arguments
-            The command-line options object, which has the options
-            attached to it as attributes
-        override_limits : dict, optional
-            Override any margin by setting a new value to its name
-            in this dictionary. SHOULD ONLY BE USED FOR TESTING.
-            This is deliberately hidden from command-line operation
-            to avoid it being used accidentally.
-        """
         # Create an empty observation list which will hold the results. This
-        # list contains all ACIS and all ECS observations and will have the
-        # sensitivity boolean added.
-        self.obs_with_sensitivity = []
-        self.perigee_passages = []
-        super(ACISFPCheck, self).run(args, override_limits=override_limits)
+        # list contains all ACIS and all ECS observations.
+        self.acis_and_ecs_obs = []
 
     def _calc_model_supp(self, model, state_times, states, ephem, state0):
         """
@@ -111,7 +83,7 @@ class ACISFPCheck(ACISThermalCheck):
 
         # For each item in the Commanded States data structure which matters to us,
         # insert the values in the commanded states data structure into the model:
-        # 
+        #
         # Telemetry doesn't have to be pushed in - the model handles that.But items in the states
         # array have to be manually shoved in.
         #
@@ -134,62 +106,8 @@ class ACISFPCheck(ACISThermalCheck):
         model.comp['1cbat'].set_data(-53.0)
         model.comp['sim_px'].set_data(-120.0)
 
-    def _gather_perigee(self, run_start, load_start):
-        # The first step is to build a list of all the perigee passages.
-
-        # Gather the perigee passages that occur from the
-        # beginning of the model run up to the start of the load
-        # from kadi
-        rzs = events.rad_zones.filter(run_start, load_start)
-        for rz in rzs:
-            self.perigee_passages.append([rz.start, rz.perigee])
-        for rz in rzs:
-            self.perigee_passages.append([rz.stop, rz.perigee])
-
-        # We will get the load passages from the relevant CRM pad time file
-        # (e.g. DO12143_CRM_Pad.txt) inside the bsdir directory
-        # Each line is either an inbound or outbound ECS
-        #
-        # The reason we are doing this is because we want to draw vertical
-        # lines denoting each perigee passage on the plots
-        #
-        # Open the file
-        crm_file_path = glob.glob(self.bsdir + "/*CRM*")[0]
-        crm_file = open(crm_file_path, 'r')
-
-        alines = crm_file.readlines()
-
-        idx = None
-        # Keep reading until you hit the last header line which is all "*"'s
-        for i, aline in enumerate(alines):
-            if len(aline) > 0 and aline[0] == "*":
-                idx = i+1
-                break
-
-        if idx is None:
-            raise RuntimeError("Couldn't find the end of the CRM Pad Time file header!")
-
-        # Found the last line of the header. Start processing Perigee Passages
-
-        # While there are still lines to be read
-        for aline in alines[idx:]:
-            # create an empty Peri. Passage instance location
-            passage = []
-
-            # split the CRM Pad Time file line read in and extract the
-            # relevant information
-            splitline = aline.split()
-            passage.append(splitline[6])  # Radzone entry/exit
-            passage.append(splitline[9])  # Perigee Passage time
-
-            # append this passage to the passages list
-            self.perigee_passages.append(passage)
-
-        # Done with the CRM Pad Time file - close it
-        crm_file.close()
-
     def _make_state_plots(self, plots, num_figs, w1, plot_start,
-                          outdir, states, load_start, figsize=(12, 6)):
+                          states, load_start, figsize=(12, 6)):
         # Make a plot of ACIS CCDs and SIM-Z position
         plots['pow_sim'] = plot_two(
             fig_id=num_figs+1,
@@ -209,12 +127,7 @@ class ACISFPCheck(ACISThermalCheck):
         plots['pow_sim']['ax'].lines[0].set_label('CCDs')
         plots['pow_sim']['ax'].lines[1].set_label('FEPs')
         plots['pow_sim']['ax'].legend(fancybox=True, framealpha=0.5, loc=2)
-        paint_perigee(self.perigee_passages, states, plots, "pow_sim")
-        filename = 'pow_sim.png'
-        outfile = os.path.join(outdir, filename)
-        mylog.info('Writing plot file %s' % outfile)
-        plots['pow_sim']['fig'].savefig(outfile)
-        plots['pow_sim']['filename'] = filename
+        plots['pow_sim']['filename'] = 'pow_sim.png'
 
         # Make a plot of off-nominal roll
         plots['roll_taco'] = plot_two(
@@ -232,102 +145,50 @@ class ACISFPCheck(ACISThermalCheck):
             ylim2=(1.0e-3, 1.0),
             figsize=figsize, width=w1, load_start=load_start)
         plots['roll_taco']['ax2'].set_yscale("log")
-        paint_perigee(self.perigee_passages, states, plots, "roll_taco")
-        filename = 'roll_taco.png'
-        outfile = os.path.join(outdir, filename)
-        mylog.info('Writing plot file %s' % outfile)
-        plots['roll_taco']['fig'].savefig(outfile)
-        plots['roll_taco']['filename'] = filename
+        plots['roll_taco']['filename'] = 'roll_taco.png'
 
-    def make_prediction_plots(self, outdir, states, temps, tstart):
+    def make_prediction_plots(self, outdir, states, temps, load_start):
         """
-        Make output plots.
+        Make plots of the thermal prediction as well as associated 
+        commanded states.
 
-        :param outdir: the directory to which the products are written
-        :param states: commanded states
-        :param times: time stamps (sec) for temperature arrays
-        :param temps: dict of temperatures
-        :param tstart: load start time
-        :rtype: dict of review information including plot file names
-
-        This function assumes that ACIS Ops LR has been run and that the directory
-        is populated with
+        Parameters
+        ----------
+        outdir : string
+            The path to the output directory.
+        states : NumPy record array
+            Commanded states
+        temps : dict of NumPy arrays
+            Dictionary of temperature arrays
+        load_start : float
+            The start time of the load in seconds from the beginning of the
+            mission.
         """
 
         times = self.predict_model.times
 
         # Gather perigee passages
-        self._gather_perigee(times[0], tstart)
+        self._gather_perigee(times[0], load_start+86400.0)
 
-        # Next we need to find all the ACIS-S observations within the start/stop
-        # times so that we can paint those on the plots as well. We will get
-        # those from the commanded states data structure called "states" 
-        # 
-        # Create an instance of the ObsidFindFilter class. This class provides
-        # methods to extract obsid intervals from the commanded states based 
-        # upon ACIS definitions and considerations. It also provides
-        # various methods to filter the interval set based upon pitch range, 
-        # number of ccd's, filter out ECS observations, and a range of exposure 
-        # times.
-        extract_and_filter = ObsidFindFilter()
+        """
+        Next we need to find all the ACIS-S observations within the start/stop
+        times so that we can paint those on the plots as well. We will get
+        those from the commanded states data structure called "states" 
+        """
 
         # extract the OBSID's from the commanded states. NOTE: this contains all
         # observations including ECS runs and HRC observations
-        observation_intervals = extract_and_filter.find_obsid_intervals(states, None)
+        observation_intervals = find_obsid_intervals(states)
 
         # Filter out any HRC science observations BUT keep ACIS ECS observations
-        acis_and_ecs_obs = extract_and_filter.hrc_science_obs_filter(observation_intervals)
-
-        # Ok so now you have all the ACIS observations collected. Also,
-        # they have been identified by ObsidFindFilter as to who is in the focal plane.
-        # Some apps, like this one, care about FP_TEMP sensitivity. Some do not. 
-        # Since we do, then checking that and assigning a sensitivity must be done
-        # 
-        # Open the sensitive observation list file, which is found in the LR 
-        # directory,
-        # read each line, extract the OBSID and add that to a list.
-        sensefile = open(os.path.join(self.bsdir, 'fp_sensitive.txt'), 'r')
-
-        # The list_of_sensitive_obs is the list of all FP TEMP sensitive 
-        # observations extracted from the file in the load review directory
-        list_of_sensitive_obs = []
-
-        # Get the list of FP_TEMP sensitive observations
-        for eachline in sensefile.readlines()[1:]:
-            # Extract the OBSID from each line; the obsid is in the second
-            # column of this line. Append it to the list of FP_TEMP sensitive
-            # observations
-            #
-            # NOTE: The obsid here is a STRING
-            list_of_sensitive_obs.append(eachline.split()[1])
-        # Done with the file - close it
-        sensefile.close()
-
-        # Now that you have the latest list of temperature sensitive OBSID's,
-        # run through each observation and append either "*FP SENS*" or
-        # "NOT FP SENS" to the end of each observation.
-
-        # Now run through the observation list attribute of the ObsidFindFilter class
-        for eachobservation in acis_and_ecs_obs:
-            # Pull the obsid from the observation and turn it into a string
-
-            obsid = str(extract_and_filter.get_obsid(eachobservation))
-            # See if it's in the sensitive list. If so, indicate whether or
-            # not this observation is FP Senstive in the new list. This will be
-            # used later in make_prediction_viols to catch violations.
-            if obsid in list_of_sensitive_obs:
-                eachobservation.append(True)
-            else:
-                eachobservation.append(False)
-
-            self.obs_with_sensitivity.append(eachobservation)
+        self.acis_and_ecs_obs = hrc_science_obs_filter(observation_intervals)
 
         # create an empty dictionary called plots to contain the returned
         # figures, axes 1  and axes 2 of the plot_two call
         plots = {}
 
         # Start time of loads being reviewed expressed in units for plotdate()
-        load_start = cxctime2plotdate([tstart])[0]
+        load_start = cxctime2plotdate([load_start])[0]
         # Value for left side of plots
         plot_start = max(load_start-2.0, cxctime2plotdate([times[0]])[0])
 
@@ -340,50 +201,80 @@ class ACISFPCheck(ACISThermalCheck):
         textypos = [-108.0, -119.3, -115.7]
         fontsize = [12, 9, 9]
         for i in range(3):
-            name = "%s_%d" % (self.name, i+1)
+            name = f"{self.name}_{i+1}"
             plots[name] = plot_two(fig_id=i+1, x=times, y=temps[self.name],
                                    x2=self.predict_model.times,
                                    y2=self.predict_model.comp["pitch"].mvals,
-                                   title=f"{self.msid.upper()} (ACIS-I in red; ACIS-S in green; ECS in blue)",
-                                   xlabel='Date', ylabel='Temperature (C)',
+                                   xlabel='Date', ylabel='Temperature ($^\circ$C)',
                                    ylabel2='Pitch (deg)', xmin=plot_start,
-                                   ylim=ylim[i], ylim2=(40, 180), 
+                                   ylim=ylim[i], ylim2=(40, 180),
                                    figsize=(12, 7.142857142857142),
                                    width=w1, load_start=load_start)
+            plots[name]['ax'].set_title(self.msid.upper(), loc='left', pad=10)
             # Draw a horizontal line indicating the FP Sensitive Observation Cut off
-            plots[name]['ax'].axhline(self.fp_sens_limit, linestyle='--', color='dodgerblue', linewidth=2.0)
+            plots[name]['ax'].axhline(self.cold_ecs_limit, linestyle='--',
+                                      color='dodgerblue', linewidth=2.0,
+                                      label='Cold ECS')
             # Draw a horizontal line showing the ACIS-I -114 deg. C cutoff
-            plots[name]['ax'].axhline(self.acis_i_limit, linestyle='--', color='purple', linewidth=2.0)
+            plots[name]['ax'].axhline(self.acis_i_limit, linestyle='--',
+                                      color='purple', linewidth=2.0,
+                                      label="ACIS-I")
             # Draw a horizontal line showing the ACIS-S -112 deg. C cutoff
-            plots[name]['ax'].axhline(self.acis_s_limit, linestyle='--', color='blue', linewidth=2.0)
+            plots[name]['ax'].axhline(self.acis_s_limit, linestyle='--',
+                                      color='blue', linewidth=2.0,
+                                      label='ACIS-S')
             # Draw a horizontal line showing the ACIS-S -109 deg. C cutoff
-            plots[name]['ax'].axhline(self.acis_hot_limit, linestyle='--', color='red', linewidth=2.0)
+            plots[name]['ax'].axhline(self.acis_hot_limit, linestyle='--',
+                                      color='red', linewidth=2.0,
+                                      label="Hot ACIS-S")
             # Get the width of this plot to make the widths of all the
             # prediction plots the same
             if i == 0:
                 w1, _ = plots[name]['fig'].get_size_inches()
 
-            # Now plot any perigee passages that occur between xmin and xmax
-            # for eachpassage in perigee_passages:
-            paint_perigee(self.perigee_passages, states, plots, name)
-
             # Now draw horizontal lines on the plot running from start to stop
             # and label them with the Obsid
-            draw_obsids(extract_and_filter, self.obs_with_sensitivity, 
-                        plots, name, ypos[i], ypos[i]-0.5*capwidth[i], 
-                        ypos[i]+0.5*capwidth[i], textypos[i], 
-                        fontsize[i], plot_start)
+            draw_obsids(self.acis_and_ecs_obs, plots, name, ypos[i], 
+                        ypos[i]-0.5*capwidth[i], ypos[i]+0.5*capwidth[i], 
+                        textypos[i], fontsize[i], plot_start)
 
-            # Build the file name and output the plot to a file
-            filename = self.msid.lower() + 'M%dtoM%d.png' % (-ylim[i][0], -ylim[i][1])
-            outfile = os.path.join(outdir, filename)
-            mylog.info('Writing plot file %s' % outfile)
-            plots[name]['fig'].savefig(outfile)
+            # These next lines are dummies so we can get the obsids in the legend
+            plots[name]['ax'].errorbar([0.0, 0.0], [1.0, 1.0], xerr=1.0,
+                                       lw=2, xlolims=True, color='red',
+                                       capsize=4, capthick=2, label='ACIS-I')
+            plots[name]['ax'].errorbar([0.0, 0.0], [1.0, 1.0], xerr=1.0,
+                                       lw=2, xlolims=True, color='green',
+                                       capsize=4, capthick=2, label='ACIS-S')
+            plots[name]['ax'].errorbar([0.0, 0.0], [1.0, 1.0], xerr=1.0,
+                                       lw=2, xlolims=True, color='blue',
+                                       capsize=4, capthick=2, label='ECS')
+
+            # Make the legend on the temperature plot
+            plots[name]['ax'].legend(bbox_to_anchor=(0.15, 0.99),
+                                     loc='lower left',
+                                     ncol=4, fontsize=14)
+            # Build the file name
+            filename = f'{self.msid.lower()}' \
+                       f'M{-int(ylim[i][0])}toM{-int(ylim[i][1])}.png'
             plots[name]['filename'] = filename
 
         self._make_state_plots(plots, 3, w1, plot_start,
-                               outdir, states, load_start, 
+                               states, load_start,
                                figsize=(12, 6))
+
+        # Now plot any perigee passages that occur between xmin and xmax
+        # for eachpassage in perigee_passages:
+        paint_perigee(self.perigee_passages, states, plots)
+
+        plots['default'] = plots[f"{self.name}_3"]
+
+        # Now write all of the plots after possible
+        # customizations have been made
+        for key in plots:
+            if key != self.msid:
+                outfile = os.path.join(outdir, plots[key]['filename'])
+                mylog.info('Writing plot file %s' % outfile)
+                plots[key]['fig'].savefig(outfile)
 
         return plots
 
@@ -394,9 +285,7 @@ class ACISFPCheck(ACISThermalCheck):
 
         MSID is a global
 
-        obs_with_sensitivity contains all ACIS and ECS observations
-        and they have had FP sensitivity boolean added. In other words it's
-        All ACIS and ECS runs.
+        acis_and_ecs_obs contains all ACIS and ECS observations.
 
         We will create a list of ECS-ONLY runs, and a list of all
         ACIS science runs without ECS runs. These two lists will
@@ -413,62 +302,62 @@ class ACISFPCheck(ACISThermalCheck):
         """
         times = self.predict_model.times
 
-        mylog.info('\nMAKE VIOLS Checking for limit violations in ' +
-                   str(len(self.obs_with_sensitivity)) +
-                   " total science observations")
+        mylog.info(f"\nMAKE VIOLS Checking for limit violations in "
+                   f"{len(self.acis_and_ecs_obs)} total science observations")
 
         viols = {}
-
-        # create an instance of ObsidFindFilter()
-        eandf = ObsidFindFilter()
 
         # ------------------------------------------------------
         #   Create subsets of all the observations
         # ------------------------------------------------------
         # Now divide out observations by ACIS-S and ACIS-I
-        ACIS_S_obs = eandf.get_all_specific_instrument(
-            self.obs_with_sensitivity, "ACIS-S")
-        ACIS_I_obs = eandf.get_all_specific_instrument(
-            self.obs_with_sensitivity, "ACIS-I")
-
-        # ACIS SCIENCE observations only  - no HRC; no ECS
-        #non_ecs_obs = eandf.ecs_filter(self.obs_with_sensitivity)
-
-        sci_ecs_obs = eandf.ecs_only_filter(self.obs_with_sensitivity)
-
-        # ACIS SCIENCE OBS which are sensitive to FP TEMP
-        #fp_sens_only_obs = eandf.fp_sens_filter(non_ecs_obs)
+        ACIS_I_obs = get_all_specific_instrument(self.acis_and_ecs_obs,
+                                                 "ACIS-I")
+        ACIS_S_obs = get_all_specific_instrument(self.acis_and_ecs_obs,
+                                                 "ACIS-S")
+        sci_ecs_obs = ecs_only_filter(self.acis_and_ecs_obs)
 
         temp = temps[self.name]
-
-        # ------------------------------------------------------------
-        # Science Orbit ECS -119.5 violations; -119.5 violation check
-        # ------------------------------------------------------------
-        mylog.info('\n\nFP SENSITIVE -119.5 SCIENCE ORBIT ECS violations')
-
-        viols["ecs"] = self.search_obsids_for_viols("Science Orbit ECS",
-            self.fp_sens_limit, sci_ecs_obs, temp, times, load_start)
-
-        # ------------------------------------------------------------
-        # ACIS-S - Collect any -111 C violations of any non-ECS ACIS-S
-        # science run. These are load killers
-        # ------------------------------------------------------------
-        #
-        mylog.info('\n\n ACIS-S -112 SCIENCE ONLY violations')
-
-        viols["ACIS_S"] = self.search_obsids_for_viols("ACIS-S",
-            self.acis_s_limit, ACIS_S_obs, temp, times, load_start)
 
         # ------------------------------------------------------------
         # ACIS-I - Collect any -112 C violations of any non-ECS ACIS-I
         # science run. These are load killers
         # ------------------------------------------------------------
         #
-        mylog.info('\n\n ACIS-I -114 SCIENCE ONLY violations')
+        mylog.info(f'\n\nACIS-I Science ({self.acis_i_limit} C) violations')
 
         # Create the violation data structure.
-        viols["ACIS_I"] = self.search_obsids_for_viols("ACIS-I",
-            self.acis_i_limit, ACIS_I_obs, temp, times, load_start)
+        acis_i_viols = self.search_obsids_for_viols("ACIS-I",
+                                                    self.acis_i_limit, ACIS_I_obs, temp, times, load_start)
+
+        viols["ACIS_I"] = {"name": f"ACIS-I ({self.acis_i_limit} C)",
+                           "type": "Max",
+                           "values": acis_i_viols}
+
+        # ------------------------------------------------------------
+        # ACIS-S - Collect any -111 C violations of any non-ECS ACIS-S
+        # science run. These are load killers
+        # ------------------------------------------------------------
+        #
+        mylog.info(f'\n\nACIS-S Science ({self.acis_s_limit} C) violations')
+
+        acis_s_viols = self.search_obsids_for_viols("ACIS-S",
+            self.acis_s_limit, ACIS_S_obs, temp, times, load_start)
+        viols["ACIS_S"] = {"name": f"ACIS-S ({self.acis_s_limit} C)",
+                           "type": "Max",
+                           "values": acis_s_viols}
+
+        # ------------------------------------------------------------
+        # Science Orbit ECS -119.5 violations; -119.5 violation check
+        # ------------------------------------------------------------
+        mylog.info(f'\n\nScience Orbit ECS ({self.cold_ecs_limit} C) violations')
+
+        ecs_viols = self.search_obsids_for_viols("Science Orbit ECS",
+                                                 self.cold_ecs_limit, sci_ecs_obs, temp, times, load_start)
+
+        viols["ecs"] = {"name": f"Science Orbit ECS ({self.cold_ecs_limit} C)",
+                        "type": "Min",
+                        "values": ecs_viols}
 
         return viols
 
@@ -479,16 +368,14 @@ class ACISFPCheck(ACISThermalCheck):
         where the temp gets warmer than the planning limit and identify which 
         observations (if any) include part or all of those intervals.
         """
-        # create an instance of ObsidFindFilter()
-        eandf = ObsidFindFilter()
 
-        viols_list = defaultdict(list)
+        viols_list = []
 
         # Run through all observations
         for eachobs in observations:
-            # Get the observation tstart and tstop times, and obsid
-            obs_tstart = eandf.get_tstart(eachobs)
-            obs_tstop = eandf.get_tstop(eachobs)
+            # Get the observation start science and stop science times, and obsid
+            obs_tstart = eachobs['start_science']
+            obs_tstop = eachobs['tstop']
             # If the observation is in this load, let's look at it
             if obs_tstart > load_start:
                 idxs = (times >= obs_tstart) & (times <= obs_tstop)
@@ -499,8 +386,8 @@ class ACISFPCheck(ACISThermalCheck):
                 # and add them to the list
                 if len(viols) > 0:
                     for viol in viols:
-                        viol["obsid"] = str(eandf.get_obsid(eachobs))
-                    viols_list[self.msid] += viols
+                        viol["obsid"] = str(eachobs["obsid"])
+                    viols_list += viols
 
         # Finished - return the violations list
         return viols_list
@@ -521,9 +408,9 @@ class ACISFPCheck(ACISThermalCheck):
         """
         super(ACISFPCheck, self).write_temps(outdir, times, temps)
         outfile = os.path.join(outdir, 'earth_solid_angles.dat')
-        mylog.info('Writing Earth solid angles to %s' % outfile)
+        mylog.info(f'Writing Earth solid angles to {outfile}')
         e = self.predict_model.comp['earthheat__fptemp'].dvals
-        efov_table = Table([times, secs2date(times), e],
+        efov_table = Table([times, CxoTime(times).date, e],
                            names=['time', 'date', 'earth_solid_angle'],
                            copy=False)
         efov_table['time'].format = '%.2f'
@@ -531,58 +418,8 @@ class ACISFPCheck(ACISThermalCheck):
         efov_table.write(outfile, format='ascii', delimiter='\t', overwrite=True)
 
 
-#----------------------------------------------------------------------
-#
-#   paint_perigee
-#
-#----------------------------------------------------------------------
-def paint_perigee(perigee_passages, states, plots, msid):
-    """
-    This function draws vertical dahsed lines for EEF, Perigee and XEF
-    events in the load.EEF and XEF lines are black; Perigee is red.
-
-    You supply the list of perigee passage events which are:
-        Radzone Start/Stop time
-        Perigee Passage time
-
-        The states you created in main
-
-        The dictionary of plots you created
-
-        The MSID (in this case FP_TEMP) used to access the dictionary
-    """
-    #
-    # Now plot any perigee passages that occur between xmin and xmax
-    for eachpassage in perigee_passages:
-        # The index [1] item is always the Perigee Passage time. Draw that line in red
-        # If this line is between tstart and tstop then it needs to be drawn
-        # on the plot. otherwise ignore
-        if states['tstop'][-1] >= DateTime(eachpassage[0]).secs >= states['tstart'][0]:
-            # Have to convert this time into the new x axis time scale necessitated by SKA
-            xpos = cxctime2plotdate([DateTime(eachpassage[0]).secs])
-
-            ymin, ymax = plots[msid]['ax'].get_ylim()
-
-            # now plot the line.
-            plots[msid]['ax'].vlines(xpos, ymin, ymax, linestyle=':', color='red', linewidth=2.0)
-
-            # Plot the perigee passage time so long as it was specified in the CTI_report file
-            if eachpassage[1] != "Not-within-load":
-                perigee_time = cxctime2plotdate([DateTime(eachpassage[1]).secs])
-                plots[msid]['ax'].vlines(perigee_time, ymin, ymax, linestyle=':',
-                                         color='black', linewidth=2.0)
-
-
-def draw_obsids(extract_and_filter, 
-                obs_with_sensitivity, 
-                plots,
-                msid, 
-                ypos, 
-                endcapstart, 
-                endcapstop, 
-                textypos, 
-                fontsize,
-                plot_start):
+def draw_obsids(obs_list, plots, msid, ypos, endcapstart, endcapstop,
+                textypos, fontsize, plot_start):
     """
     This function draws visual indicators across the top of the plot showing
     which observations are ACIS; whether they are ACIS-I (red), ACIS-S (green),
@@ -593,7 +430,6 @@ def draw_obsids(extract_and_filter,
 
     The caller supplies:
                Options from the Command line supplied by the user at runtime
-               The instance of the ObsidFindFilter() class created 
                The plot dictionary
                The MSID used to index into the plot dictionary (superfluous but required)
                The position on the Y axis you'd like these indicators to appear
@@ -603,12 +439,12 @@ def draw_obsids(extract_and_filter,
                The font size
                The left time of the plot in plot_date units
     """
-    # Now run through the observation list attribute of the ObsidFindFilter class
-    for eachobservation in obs_with_sensitivity:
+    # Now run through the observation list
+    for eachobservation in obs_list:
         # extract the obsid
 
-        obsid = extract_and_filter.get_obsid(eachobservation)
-        in_fp = eachobservation[extract_and_filter.in_focal_plane]
+        obsid = eachobservation['obsid']
+        in_fp = eachobservation['instrument']
 
         if obsid > 60000:
             # ECS observations during the science orbit are colored blue
@@ -628,44 +464,44 @@ def draw_obsids(extract_and_filter,
             obsid_txt += " (ECS)"
 
         # Convert the start and stop times into the Ska-required format
-        obs_start = cxctime2plotdate([extract_and_filter.get_tstart(eachobservation)])
-        obs_stop = cxctime2plotdate([extract_and_filter.get_tstop(eachobservation)])
+        obs_start = cxctime2plotdate([eachobservation['tstart']])
+        obs_stop = cxctime2plotdate([eachobservation['tstop']])
 
         if in_fp.startswith("ACIS-") or obsid > 60000:
             # For each ACIS Obsid, draw a horizontal line to show
             # its start and stop
-            plots[msid]['ax'].hlines(ypos, 
-                                     obs_start, 
-                                     obs_stop, 
-                                     linestyle='-', 
-                                     color=color, 
+            plots[msid]['ax'].hlines(ypos,
+                                     obs_start,
+                                     obs_stop,
+                                     linestyle='-',
+                                     color=color,
                                      linewidth=2.0)
 
             # Plot vertical end caps for each obsid to visually show start/stop
-            plots[msid]['ax'].vlines(obs_start, 
-                                     endcapstart, 
-                                     endcapstop, 
-                                     color=color, 
+            plots[msid]['ax'].vlines(obs_start,
+                                     endcapstart,
+                                     endcapstop,
+                                     color=color,
                                      linewidth=2.0)
-            plots[msid]['ax'].vlines(obs_stop, 
-                                     endcapstart, 
-                                     endcapstop, 
-                                     color=color, 
+            plots[msid]['ax'].vlines(obs_stop,
+                                     endcapstart,
+                                     endcapstop,
+                                     color=color,
                                      linewidth=2.0)
 
-            # Now print the obsid in the middle of the time span, 
-            # above the line, and rotate 90 degrees. 
+            # Now print the obsid in the middle of the time span,
+            # above the line, and rotate 90 degrees.
 
             obs_time = obs_start + (obs_stop - obs_start)/2
             if obs_time > plot_start:
                 # Now plot the obsid.
-                plots[msid]['ax'].text(obs_time, 
-                                       textypos, 
-                                       obsid_txt,  
-                                       color=color, 
-                                       va='bottom', 
-                                       ma='left', 
-                                       rotation=90, 
+                plots[msid]['ax'].text(obs_time,
+                                       textypos,
+                                       obsid_txt,
+                                       color=color,
+                                       va='bottom',
+                                       ma='left',
+                                       rotation=90,
                                        fontsize=fontsize)
 
 
